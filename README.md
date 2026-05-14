@@ -28,6 +28,7 @@ collector/.venv/bin/python collector/collect_weather_forecasts.py
 ```bash
 collector/.venv/bin/python collector/parse_snapshots.py --date YYYY-MM-DD --sync-from-gcs --upload-to-gcs --overwrite
 collector/.venv/bin/python collector/parse_static_gtfs.py --date YYYY-MM-DD --sync-from-gcs --upload-to-gcs --overwrite
+collector/.venv/bin/python collector/run_local_parse.py --start-date YYYY-MM-DD --end-date YYYY-MM-DD
 ```
 
 ## Health Check
