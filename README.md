@@ -3,6 +3,7 @@
 Collector and parsing tools for Grand River Transit GTFS-Realtime and static GTFS data, including vehicle positions, trip updates, service alerts, and static schedules.
 
 By default, trip updates and vehicle positions are collected every 30 seconds. Service alerts are collected every 5 minutes.
+Weather forecast snapshots are collected every 3 hours on the GCP VM.
 
 ## Setup
 
@@ -19,6 +20,7 @@ Set `GCS_BUCKET` in `.env` to upload snapshots and parsed tables to Google Cloud
 ```bash
 collector/.venv/bin/python collector/collect_feeds.py --once
 collector/.venv/bin/python collector/collect_feeds.py
+collector/.venv/bin/python collector/collect_weather_forecasts.py
 ```
 
 ## Parse

@@ -21,6 +21,9 @@ STATIC_FEEDS = (
     "bus_static_gtfs",
     "lrt_static_gtfs",
 )
+WEATHER_FORECAST_LOCATIONS = (
+    "kitchener_waterloo",
+)
 
 
 def utc_now():
@@ -78,6 +81,27 @@ def check_static_feed(bucket, feed_name, now, max_age_hours):
     )
 
 
+def check_weather_forecast(bucket, location_name, now, max_age_hours):
+    prefix = f"raw/weather_forecasts/{location_name}/"
+    blob = latest_blob(bucket, prefix)
+
+    if blob is None:
+        return False, f"{location_name}: no weather forecast snapshots found under gs://{bucket.name}/{prefix}"
+
+    age = now - blob.updated
+    if age > timedelta(hours=max_age_hours):
+        return (
+            False,
+            f"{location_name}: latest weather forecast is stale "
+            f"({age.total_seconds() / 3600:.1f} hr old): gs://{bucket.name}/{blob.name}",
+        )
+
+    return (
+        True,
+        f"{location_name}: ok ({age.total_seconds() / 3600:.1f} hr old): gs://{bucket.name}/{blob.name}",
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Check whether recent GRT collector snapshots exist in GCS.")
     parser.add_argument(
@@ -104,9 +128,20 @@ def parse_args():
         help="Maximum acceptable age for static GTFS ZIP snapshots.",
     )
     parser.add_argument(
+        "--max-weather-forecast-age-hours",
+        type=int,
+        default=6,
+        help="Maximum acceptable age for weather forecast snapshots.",
+    )
+    parser.add_argument(
         "--skip-static",
         action="store_true",
         help="Only check realtime feeds.",
+    )
+    parser.add_argument(
+        "--skip-weather",
+        action="store_true",
+        help="Skip weather forecast checks.",
     )
     return parser.parse_args()
 
@@ -132,6 +167,10 @@ def main():
     if not args.skip_static:
         for feed_name in STATIC_FEEDS:
             results.append(check_static_feed(bucket, feed_name, now, args.max_static_age_hours))
+
+    if not args.skip_weather:
+        for location_name in WEATHER_FORECAST_LOCATIONS:
+            results.append(check_weather_forecast(bucket, location_name, now, args.max_weather_forecast_age_hours))
 
     for ok, message in results:
         status = "OK" if ok else "FAIL"

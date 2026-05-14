@@ -82,6 +82,36 @@ gcloud compute ssh grt-collector-vm --zone us-east1-b \
   --command "journalctl -u grt-daily-parse.service -f"
 ```
 
+## Weather Forecast Job
+
+The VM collects ECCC Kitchener-Waterloo forecast snapshots every 3 hours:
+
+```text
+grt-weather-forecast.timer
+grt-weather-forecast.service
+```
+
+Check the timer:
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "systemctl list-timers grt-weather-forecast.timer --no-pager"
+```
+
+Run a forecast snapshot manually:
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "sudo -u grtcollector /opt/grt-reliability-tracker/collector/.venv/bin/python /opt/grt-reliability-tracker/collector/collect_weather_forecasts.py"
+```
+
+Watch forecast logs:
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "journalctl -u grt-weather-forecast.service -f"
+```
+
 ## Stop Collection
 
 ```bash

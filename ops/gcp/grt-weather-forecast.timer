@@ -1,0 +1,10 @@
+[Unit]
+Description=Collect ECCC weather forecast snapshots every 3 hours
+
+[Timer]
+OnCalendar=*-*-* 00/3:07:00 UTC
+Persistent=true
+Unit=grt-weather-forecast.service
+
+[Install]
+WantedBy=timers.target
