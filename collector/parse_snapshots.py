@@ -19,6 +19,7 @@ REALTIME_FEEDS = (
     "bus_vehicle_positions",
     "lrt_trip_updates",
     "lrt_vehicle_positions",
+    "grt_service_alerts",
 )
 
 SNAPSHOT_SCHEMA = pa.schema(
@@ -118,11 +119,70 @@ STOP_TIME_UPDATE_SCHEMA = pa.schema(
     ]
 )
 
+SERVICE_ALERT_SCHEMA = pa.schema(
+    [
+        ("feed_name", pa.string()),
+        ("snapshot_path", pa.string()),
+        ("snapshot_date", pa.string()),
+        ("collected_at_utc", pa.timestamp("s", tz="UTC")),
+        ("feed_timestamp_utc", pa.timestamp("s", tz="UTC")),
+        ("entity_id", pa.string()),
+        ("cause", pa.int64()),
+        ("effect", pa.int64()),
+        ("severity_level", pa.int64()),
+        ("header_text", pa.string()),
+        ("description_text", pa.string()),
+        ("url", pa.string()),
+        ("tts_header_text", pa.string()),
+        ("tts_description_text", pa.string()),
+        ("active_period_count", pa.int64()),
+        ("informed_entity_count", pa.int64()),
+    ]
+)
+
+SERVICE_ALERT_ACTIVE_PERIOD_SCHEMA = pa.schema(
+    [
+        ("feed_name", pa.string()),
+        ("snapshot_path", pa.string()),
+        ("snapshot_date", pa.string()),
+        ("collected_at_utc", pa.timestamp("s", tz="UTC")),
+        ("feed_timestamp_utc", pa.timestamp("s", tz="UTC")),
+        ("entity_id", pa.string()),
+        ("active_period_index", pa.int64()),
+        ("start_time_utc", pa.timestamp("s", tz="UTC")),
+        ("end_time_utc", pa.timestamp("s", tz="UTC")),
+    ]
+)
+
+SERVICE_ALERT_INFORMED_ENTITY_SCHEMA = pa.schema(
+    [
+        ("feed_name", pa.string()),
+        ("snapshot_path", pa.string()),
+        ("snapshot_date", pa.string()),
+        ("collected_at_utc", pa.timestamp("s", tz="UTC")),
+        ("feed_timestamp_utc", pa.timestamp("s", tz="UTC")),
+        ("entity_id", pa.string()),
+        ("informed_entity_index", pa.int64()),
+        ("agency_id", pa.string()),
+        ("route_id", pa.string()),
+        ("route_type", pa.int64()),
+        ("stop_id", pa.string()),
+        ("trip_id", pa.string()),
+        ("direction_id", pa.int64()),
+        ("start_time", pa.string()),
+        ("start_date", pa.string()),
+        ("trip_schedule_relationship", pa.int64()),
+    ]
+)
+
 TABLE_SCHEMAS = {
     "feed_snapshots": SNAPSHOT_SCHEMA,
     "vehicle_positions": VEHICLE_POSITION_SCHEMA,
     "trip_updates": TRIP_UPDATE_SCHEMA,
     "stop_time_updates": STOP_TIME_UPDATE_SCHEMA,
+    "service_alerts": SERVICE_ALERT_SCHEMA,
+    "service_alert_active_periods": SERVICE_ALERT_ACTIVE_PERIOD_SCHEMA,
+    "service_alert_informed_entities": SERVICE_ALERT_INFORMED_ENTITY_SCHEMA,
 }
 
 
@@ -173,6 +233,21 @@ def vehicle_descriptor_fields(vehicle):
     }
 
 
+def translated_text(translated_string):
+    if not translated_string.translation:
+        return None
+
+    english = [
+        translation.text
+        for translation in translated_string.translation
+        if translation.text and translation.language.lower().startswith("en")
+    ]
+    if english:
+        return english[0]
+
+    return translated_string.translation[0].text or None
+
+
 def parse_snapshot(path, feed_name):
     content = path.read_bytes()
     feed = gtfs_realtime_pb2.FeedMessage()
@@ -188,6 +263,9 @@ def parse_snapshot(path, feed_name):
         "vehicle_positions": [],
         "trip_updates": [],
         "stop_time_updates": [],
+        "service_alerts": [],
+        "service_alert_active_periods": [],
+        "service_alert_informed_entities": [],
     }
     counts = {
         "vehicle": 0,
@@ -280,6 +358,66 @@ def parse_snapshot(path, feed_name):
 
         elif entity.HasField("alert"):
             counts["alert"] += 1
+            alert = entity.alert
+
+            rows["service_alerts"].append(
+                {
+                    "feed_name": feed_name,
+                    "snapshot_path": snapshot_path,
+                    "snapshot_date": snapshot_date,
+                    "collected_at_utc": collected_at,
+                    "feed_timestamp_utc": feed_timestamp,
+                    "entity_id": entity.id or None,
+                    "cause": optional_scalar(alert, "cause"),
+                    "effect": optional_scalar(alert, "effect"),
+                    "severity_level": optional_scalar(alert, "severity_level"),
+                    "header_text": translated_text(alert.header_text),
+                    "description_text": translated_text(alert.description_text),
+                    "url": translated_text(alert.url),
+                    "tts_header_text": translated_text(alert.tts_header_text),
+                    "tts_description_text": translated_text(alert.tts_description_text),
+                    "active_period_count": len(alert.active_period),
+                    "informed_entity_count": len(alert.informed_entity),
+                }
+            )
+
+            for index, active_period in enumerate(alert.active_period):
+                rows["service_alert_active_periods"].append(
+                    {
+                        "feed_name": feed_name,
+                        "snapshot_path": snapshot_path,
+                        "snapshot_date": snapshot_date,
+                        "collected_at_utc": collected_at,
+                        "feed_timestamp_utc": feed_timestamp,
+                        "entity_id": entity.id or None,
+                        "active_period_index": index,
+                        "start_time_utc": optional_timestamp(active_period, "start"),
+                        "end_time_utc": optional_timestamp(active_period, "end"),
+                    }
+                )
+
+            for index, informed_entity in enumerate(alert.informed_entity):
+                trip = trip_fields(informed_entity.trip)
+                rows["service_alert_informed_entities"].append(
+                    {
+                        "feed_name": feed_name,
+                        "snapshot_path": snapshot_path,
+                        "snapshot_date": snapshot_date,
+                        "collected_at_utc": collected_at,
+                        "feed_timestamp_utc": feed_timestamp,
+                        "entity_id": entity.id or None,
+                        "informed_entity_index": index,
+                        "agency_id": informed_entity.agency_id or None,
+                        "route_id": informed_entity.route_id or None,
+                        "route_type": optional_scalar(informed_entity, "route_type"),
+                        "stop_id": informed_entity.stop_id or None,
+                        "trip_id": trip["trip_id"],
+                        "direction_id": trip["direction_id"],
+                        "start_time": trip["start_time"],
+                        "start_date": trip["start_date"],
+                        "trip_schedule_relationship": trip["schedule_relationship"],
+                    }
+                )
 
     rows["feed_snapshots"].append(
         {

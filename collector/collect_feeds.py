@@ -49,6 +49,12 @@ DEFAULT_FEEDS = {
         "extension": ".pb",
         "kind": "realtime",
     },
+    "grt_service_alerts": {
+        "env": "GRT_SERVICE_ALERTS_URL",
+        "url": "https://webapps.regionofwaterloo.ca/api/grt-routes/api/alerts",
+        "extension": ".pb",
+        "kind": "realtime",
+    },
     "bus_static_gtfs": {
         "env": "BUS_STATIC_GTFS_URL",
         "url": "https://webapps.regionofwaterloo.ca/api/grt-routes/api/staticfeeds/1",

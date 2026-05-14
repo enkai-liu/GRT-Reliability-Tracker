@@ -1,6 +1,6 @@
 # GRT Reliability Tracker
 
-Collector and parsing tools for Grand River Transit GTFS-Realtime and static GTFS data.
+Collector and parsing tools for Grand River Transit GTFS-Realtime and static GTFS data, including vehicle positions, trip updates, service alerts, and static schedules.
 
 ## Setup
 

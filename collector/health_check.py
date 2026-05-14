@@ -13,6 +13,7 @@ REALTIME_FEEDS = (
     "bus_vehicle_positions",
     "lrt_trip_updates",
     "lrt_vehicle_positions",
+    "grt_service_alerts",
 )
 STATIC_FEEDS = (
     "bus_static_gtfs",
