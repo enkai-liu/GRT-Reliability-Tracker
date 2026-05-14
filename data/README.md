@@ -12,6 +12,8 @@ raw/
   bus_vehicle_positions/YYYY-MM-DD/timestamp.pb
   lrt_trip_updates/YYYY-MM-DD/timestamp.pb
   lrt_vehicle_positions/YYYY-MM-DD/timestamp.pb
+  grt_service_alerts/YYYY-MM-DD/timestamp.pb
+  weather_forecasts/kitchener_waterloo/YYYY-MM-DD/timestamp.json
 static_gtfs/
   bus_static_gtfs/YYYY-MM-DD/GTFS.zip
   lrt_static_gtfs/YYYY-MM-DD/GTFS.zip
@@ -20,6 +22,9 @@ parsed/
   vehicle_positions/date=YYYY-MM-DD/part-000.parquet
   trip_updates/date=YYYY-MM-DD/part-000.parquet
   stop_time_updates/date=YYYY-MM-DD/part-000.parquet
+  service_alerts/date=YYYY-MM-DD/part-000.parquet
+  service_alert_active_periods/date=YYYY-MM-DD/part-000.parquet
+  service_alert_informed_entities/date=YYYY-MM-DD/part-000.parquet
 parsed_static_gtfs/
   routes/p_feed=bus_static_gtfs/p_snapshot_date=YYYY-MM-DD/part-000.parquet
   stops/p_feed=bus_static_gtfs/p_snapshot_date=YYYY-MM-DD/part-000.parquet

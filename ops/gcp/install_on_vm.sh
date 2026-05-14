@@ -38,13 +38,13 @@ cp "$PROJECT_DIR/ops/gcp/$WEATHER_TIMER" "/etc/systemd/system/$WEATHER_TIMER"
 systemctl daemon-reload
 systemctl enable "$COLLECTOR_SERVICE"
 systemctl restart "$COLLECTOR_SERVICE"
-systemctl enable "$PARSE_TIMER"
-systemctl restart "$PARSE_TIMER"
+systemctl disable "$PARSE_TIMER" >/dev/null 2>&1 || true
+systemctl stop "$PARSE_TIMER" >/dev/null 2>&1 || true
 systemctl enable "$WEATHER_TIMER"
 systemctl restart "$WEATHER_TIMER"
 
 echo "Installed and started $COLLECTOR_SERVICE"
-echo "Installed and started $PARSE_TIMER"
+echo "Installed $PARSE_TIMER but left it disabled; run parsing locally or manually on a larger VM."
 echo "Installed and started $WEATHER_TIMER"
 echo "Check collector logs with: journalctl -u $COLLECTOR_SERVICE -f"
 echo "Check parse logs with: journalctl -u $PARSE_SERVICE -f"

@@ -46,7 +46,7 @@ def check_realtime_feed(bucket, feed_name, now, max_age_minutes):
     if blob is None:
         return False, f"{feed_name}: no snapshots found under gs://{bucket.name}/{prefix}"
 
-    age = now - blob.updated
+    age = max(now - blob.updated, timedelta())
     if age > timedelta(minutes=max_age_minutes):
         return (
             False,
@@ -67,7 +67,7 @@ def check_static_feed(bucket, feed_name, now, max_age_hours):
     if blob is None:
         return False, f"{feed_name}: no static GTFS snapshots found under gs://{bucket.name}/{prefix}"
 
-    age = now - blob.updated
+    age = max(now - blob.updated, timedelta())
     if age > timedelta(hours=max_age_hours):
         return (
             False,
@@ -88,7 +88,7 @@ def check_weather_forecast(bucket, location_name, now, max_age_hours):
     if blob is None:
         return False, f"{location_name}: no weather forecast snapshots found under gs://{bucket.name}/{prefix}"
 
-    age = now - blob.updated
+    age = max(now - blob.updated, timedelta())
     if age > timedelta(hours=max_age_hours):
         return (
             False,

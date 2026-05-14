@@ -52,16 +52,41 @@ gcloud compute ssh grt-collector-vm --zone us-east1-b \
   --command "/opt/grt-reliability-tracker/collector/.venv/bin/python /opt/grt-reliability-tracker/collector/health_check.py"
 ```
 
-## Daily Parse Job
+## One-Week Check
 
-The VM installs a `systemd` timer that parses yesterday's raw and static GTFS snapshots once per day:
+When you come back after a few days, run these first:
+
+```bash
+collector/.venv/bin/python collector/health_check.py
+```
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "systemctl status grt-collector.service grt-daily-parse.timer grt-weather-forecast.timer --no-pager"
+```
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "systemctl list-timers grt-daily-parse.timer grt-weather-forecast.timer --no-pager"
+```
+
+## Parse Job
+
+The VM installs parse service files, but the daily parse timer is disabled by default on the `e2-micro` collector VM. Parsing full days can be CPU and memory heavy, so the safer setup is to keep the small VM focused on raw collection and run parsing locally or on a larger machine.
 
 ```text
 grt-daily-parse.timer
 grt-daily-parse.service
 ```
 
-Check the timer:
+Run parsing locally:
+
+```bash
+collector/.venv/bin/python collector/parse_snapshots.py --date YYYY-MM-DD --sync-from-gcs --upload-to-gcs --overwrite
+collector/.venv/bin/python collector/parse_static_gtfs.py --date YYYY-MM-DD --sync-from-gcs --upload-to-gcs --overwrite
+```
+
+Check whether the VM timer is enabled:
 
 ```bash
 gcloud compute ssh grt-collector-vm --zone us-east1-b \
@@ -80,6 +105,13 @@ Watch parse logs:
 ```bash
 gcloud compute ssh grt-collector-vm --zone us-east1-b \
   --command "journalctl -u grt-daily-parse.service -f"
+```
+
+To enable automatic daily parsing later, use a larger VM first, then run:
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "sudo systemctl enable --now grt-daily-parse.timer"
 ```
 
 ## Weather Forecast Job
