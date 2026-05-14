@@ -61,33 +61,4 @@ The collector is currently designed to run on a small Compute Engine VM using `s
 
 See:
 
-- [GCP setup](GCP_SETUP.md)
 - [GCP VM deployment](ops/gcp/README.md)
-
-## macOS Background Mode
-
-For local development, the collector can also run as a macOS LaunchAgent.
-
-See:
-
-- [LaunchAgent setup](ops/launchd/README.md)
-
-## Manual Inspection
-
-Use `collector/inspect_pb.py` to verify downloaded `.pb` files:
-
-```bash
-collector/.venv/bin/python collector/inspect_pb.py path/to/file.pb
-```
-
-## Repository Hygiene
-
-The repo intentionally ignores:
-
-- `.env`
-- virtual environments
-- logs
-- raw `.pb` and static GTFS data under `data/`
-- credential JSON files
-
-Keep raw data in GCS or local ignored folders, not in Git.
