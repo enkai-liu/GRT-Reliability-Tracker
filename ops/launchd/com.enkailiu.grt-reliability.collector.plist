@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.enkailiu.grt-reliability.collector</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/enkailiu/grt-reliability-tracker/collector/.venv/bin/python</string>
+    <string>-u</string>
+    <string>/Users/enkailiu/grt-reliability-tracker/collector/collect_feeds.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/enkailiu/grt-reliability-tracker</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/enkailiu</string>
+    <key>PATH</key>
+    <string>/Users/enkailiu/grt-reliability-tracker/collector/.venv/bin:/Users/enkailiu/google-cloud-sdk/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/enkailiu/grt-reliability-tracker/logs/collector.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/enkailiu/grt-reliability-tracker/logs/collector.err.log</string>
+</dict>
+</plist>

@@ -1,0 +1,17 @@
+[Unit]
+Description=GRT Reliability Tracker collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/grt-reliability-tracker
+EnvironmentFile=/opt/grt-reliability-tracker/.env
+ExecStart=/opt/grt-reliability-tracker/collector/.venv/bin/python -u /opt/grt-reliability-tracker/collector/collect_feeds.py
+Restart=always
+RestartSec=10
+User=grtcollector
+Group=grtcollector
+
+[Install]
+WantedBy=multi-user.target

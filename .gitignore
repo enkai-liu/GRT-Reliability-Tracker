@@ -1,0 +1,27 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*credentials*.json
+*service-account*.json
+application_default_credentials.json
+
+# Python
+.venv/
+collector/.venv/
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Generated collector output
+data/**
+!data/
+!data/README.md
+logs/
+*.log
+
+# Local OS/editor noise
+.DS_Store
+.vscode/
+.idea/
