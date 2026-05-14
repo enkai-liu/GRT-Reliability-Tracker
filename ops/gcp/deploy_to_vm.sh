@@ -56,7 +56,7 @@ gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "sudo systemctl stop grt-
 gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "sudo rm -rf /opt/grt-reliability-tracker && sudo mkdir -p /opt/grt-reliability-tracker && sudo chown \$(whoami) /opt/grt-reliability-tracker"
 gcloud compute scp "$ARCHIVE" "$VM_NAME:/tmp/grt-reliability-tracker-vm.tar.gz" --zone "$ZONE"
 gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "tar -xzf /tmp/grt-reliability-tracker-vm.tar.gz -C /opt/grt-reliability-tracker"
-gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "printf '%s\n' 'POLL_SECONDS=30' 'ALERT_POLL_SECONDS=300' 'DATA_ROOT=data' 'GCS_BUCKET=$BUCKET_NAME' 'WEATHER_FORECAST_LOCATION_ID=on-82' 'WEATHER_FORECAST_LOCATION_NAME=kitchener_waterloo' 'WEATHER_FORECAST_API_URL=https://api.weather.gc.ca/collections/citypageweather-realtime/items' > /opt/grt-reliability-tracker/.env"
+gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "printf '%s\n' 'POLL_SECONDS=30' 'ALERT_POLL_SECONDS=300' 'DATA_ROOT=data' 'GCS_BUCKET=$BUCKET_NAME' 'WEATHER_FORECAST_LOCATIONS=kitchener_waterloo:on-82,cambridge:on-81' 'WEATHER_FORECAST_API_URL=https://api.weather.gc.ca/collections/citypageweather-realtime/items' > /opt/grt-reliability-tracker/.env"
 gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "sudo bash /opt/grt-reliability-tracker/ops/gcp/install_on_vm.sh"
 
 echo "Deployment complete."

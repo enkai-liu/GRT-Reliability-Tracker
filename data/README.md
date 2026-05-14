@@ -14,6 +14,7 @@ raw/
   lrt_vehicle_positions/YYYY-MM-DD/timestamp.pb
   grt_service_alerts/YYYY-MM-DD/timestamp.pb
   weather_forecasts/kitchener_waterloo/YYYY-MM-DD/timestamp.json
+  weather_forecasts/cambridge/YYYY-MM-DD/timestamp.json
 static_gtfs/
   bus_static_gtfs/YYYY-MM-DD/GTFS.zip
   lrt_static_gtfs/YYYY-MM-DD/GTFS.zip

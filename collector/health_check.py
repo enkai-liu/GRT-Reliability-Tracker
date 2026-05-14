@@ -23,6 +23,7 @@ STATIC_FEEDS = (
 )
 WEATHER_FORECAST_LOCATIONS = (
     "kitchener_waterloo",
+    "cambridge",
 )
 
 

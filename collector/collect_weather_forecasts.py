@@ -11,8 +11,10 @@ from google.cloud import storage
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_ROOT = PROJECT_ROOT / "data"
-DEFAULT_LOCATION_ID = "on-82"
-DEFAULT_LOCATION_NAME = "kitchener_waterloo"
+DEFAULT_LOCATIONS = (
+    ("kitchener_waterloo", "on-82"),
+    ("cambridge", "on-81"),
+)
 DEFAULT_API_URL = "https://api.weather.gc.ca/collections/citypageweather-realtime/items"
 REQUEST_TIMEOUT_SECONDS = 20
 
@@ -84,17 +86,51 @@ def upload_to_gcs(bucket, object_name, path):
     blob.upload_from_filename(path, content_type="application/json")
 
 
+def parse_location_spec(value):
+    if ":" not in value:
+        raise argparse.ArgumentTypeError("expected name:id, such as kitchener_waterloo:on-82")
+
+    location_name, location_id = value.split(":", 1)
+    location_name = location_name.strip()
+    location_id = location_id.strip()
+
+    if not location_name or not location_id:
+        raise argparse.ArgumentTypeError("location name and id are required")
+
+    return location_name, location_id
+
+
+def configured_locations(args):
+    if args.location:
+        return args.location
+
+    env_locations = os.getenv("WEATHER_FORECAST_LOCATIONS")
+    if env_locations:
+        return [parse_location_spec(item.strip()) for item in env_locations.split(",") if item.strip()]
+
+    if args.location_id and args.location_name:
+        return [(args.location_name, args.location_id)]
+
+    return list(DEFAULT_LOCATIONS)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Collect ECCC weather forecast snapshots.")
     parser.add_argument(
+        "--location",
+        action="append",
+        type=parse_location_spec,
+        help="Weather location as name:id, such as kitchener_waterloo:on-82. May be repeated.",
+    )
+    parser.add_argument(
         "--location-id",
-        default=os.getenv("WEATHER_FORECAST_LOCATION_ID", DEFAULT_LOCATION_ID),
-        help="ECCC citypageweather item id.",
+        default=os.getenv("WEATHER_FORECAST_LOCATION_ID"),
+        help="Deprecated single-location ECCC citypageweather item id.",
     )
     parser.add_argument(
         "--location-name",
-        default=os.getenv("WEATHER_FORECAST_LOCATION_NAME", DEFAULT_LOCATION_NAME),
-        help="Local/GCS folder name for this weather forecast location.",
+        default=os.getenv("WEATHER_FORECAST_LOCATION_NAME"),
+        help="Deprecated single-location local/GCS folder name.",
     )
     parser.add_argument(
         "--api-url",
@@ -116,21 +152,23 @@ def main():
     data_root = resolve_data_root(args.data_root).resolve()
     gcs_bucket = make_gcs_bucket(os.getenv("GCS_BUCKET"))
     now = utc_now()
+    locations = configured_locations(args)
 
-    payload = fetch_forecast(args.location_id, args.api_url)
-    hourly_count, last_updated = validate_forecast(payload)
-    path, object_name = save_forecast(data_root, args.location_name, payload, now)
+    for location_name, location_id in locations:
+        payload = fetch_forecast(location_id, args.api_url)
+        hourly_count, last_updated = validate_forecast(payload)
+        path, object_name = save_forecast(data_root, location_name, payload, now)
 
-    if gcs_bucket:
-        upload_to_gcs(gcs_bucket, object_name, path)
-        destination = f"gs://{gcs_bucket.name}/{object_name}"
-    else:
-        destination = str(path)
+        if gcs_bucket:
+            upload_to_gcs(gcs_bucket, object_name, path)
+            destination = f"gs://{gcs_bucket.name}/{object_name}"
+        else:
+            destination = str(path)
 
-    print(
-        f"[{timestamp_name(now)}] saved weather_forecast {args.location_name}: "
-        f"{destination} ({hourly_count} hourly forecasts, lastUpdated={last_updated})"
-    )
+        print(
+            f"[{timestamp_name(now)}] saved weather_forecast {location_name}: "
+            f"{destination} ({hourly_count} hourly forecasts, lastUpdated={last_updated})"
+        )
 
 
 if __name__ == "__main__":

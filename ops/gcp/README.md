@@ -116,7 +116,7 @@ gcloud compute ssh grt-collector-vm --zone us-east1-b \
 
 ## Weather Forecast Job
 
-The VM collects ECCC Kitchener-Waterloo forecast snapshots every 3 hours:
+The VM collects ECCC Kitchener-Waterloo and Cambridge forecast snapshots every 3 hours:
 
 ```text
 grt-weather-forecast.timer
