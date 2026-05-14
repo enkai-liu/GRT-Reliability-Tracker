@@ -2,6 +2,8 @@
 
 Collector and parsing tools for Grand River Transit GTFS-Realtime and static GTFS data, including vehicle positions, trip updates, service alerts, and static schedules.
 
+By default, trip updates and vehicle positions are collected every 30 seconds. Service alerts are collected every 5 minutes.
+
 ## Setup
 
 ```bash

@@ -18,6 +18,7 @@ from urllib3.poolmanager import PoolManager
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_ROOT = PROJECT_ROOT / "data"
 DEFAULT_POLL_SECONDS = 30
+DEFAULT_ALERT_POLL_SECONDS = 300
 REQUEST_TIMEOUT_SECONDS = 20
 CONTENT_TYPES = {
     ".pb": "application/x-protobuf",
@@ -175,11 +176,14 @@ def upload_to_gcs(bucket, object_name, path, extension):
     blob.upload_from_filename(path, content_type=CONTENT_TYPES.get(extension))
 
 
-def collect_realtime(session, gcs_bucket, data_root, feeds):
+def collect_realtime(session, gcs_bucket, data_root, feeds, feed_names=None):
     now = utc_now()
+    selected_feed_names = set(feed_names) if feed_names is not None else None
 
     for name, config in feeds.items():
         if config["kind"] != "realtime":
+            continue
+        if selected_feed_names and name not in selected_feed_names:
             continue
 
         try:
@@ -261,7 +265,13 @@ def parse_args():
         "--poll-seconds",
         type=positive_int,
         default=int(os.getenv("POLL_SECONDS", DEFAULT_POLL_SECONDS)),
-        help="Seconds between realtime polling cycles.",
+        help="Seconds between trip update and vehicle position polling cycles.",
+    )
+    parser.add_argument(
+        "--alert-poll-seconds",
+        type=positive_int,
+        default=int(os.getenv("ALERT_POLL_SECONDS", DEFAULT_ALERT_POLL_SECONDS)),
+        help="Seconds between service alert polling cycles.",
     )
     parser.add_argument(
         "--data-root",
@@ -281,13 +291,28 @@ def main():
     gcs_bucket = make_gcs_bucket(os.getenv("GCS_BUCKET"))
 
     print(f"Writing data to: {data_root}")
-    print(f"Realtime poll interval: {args.poll_seconds} seconds")
+    print(f"Trip/vehicle poll interval: {args.poll_seconds} seconds")
+    print(f"Service alert poll interval: {args.alert_poll_seconds} seconds")
     if gcs_bucket:
         print(f"Uploading snapshots to: gs://{gcs_bucket.name}")
 
+    alert_feeds = [name for name in feeds if "alert" in name]
+    frequent_feeds = [name for name in feeds if feeds[name]["kind"] == "realtime" and name not in alert_feeds]
+    last_alert_poll = None
+
     while True:
+        now = utc_now()
         collect_static_once_per_day(session, gcs_bucket, data_root, feeds)
-        collect_realtime(session, gcs_bucket, data_root, feeds)
+        collect_realtime(session, gcs_bucket, data_root, feeds, frequent_feeds)
+
+        alert_poll_due = (
+            last_alert_poll is None
+            or (now - last_alert_poll).total_seconds() >= args.alert_poll_seconds
+            or args.once
+        )
+        if alert_poll_due:
+            collect_realtime(session, gcs_bucket, data_root, feeds, alert_feeds)
+            last_alert_poll = now
 
         if args.once:
             break

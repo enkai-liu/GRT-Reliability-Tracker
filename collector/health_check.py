@@ -13,6 +13,8 @@ REALTIME_FEEDS = (
     "bus_vehicle_positions",
     "lrt_trip_updates",
     "lrt_vehicle_positions",
+)
+ALERT_FEEDS = (
     "grt_service_alerts",
 )
 STATIC_FEEDS = (
@@ -90,6 +92,12 @@ def parse_args():
         help="Maximum acceptable age for realtime snapshots.",
     )
     parser.add_argument(
+        "--max-alert-age-minutes",
+        type=int,
+        default=15,
+        help="Maximum acceptable age for service alert snapshots.",
+    )
+    parser.add_argument(
         "--max-static-age-hours",
         type=int,
         default=48,
@@ -117,6 +125,9 @@ def main():
 
     for feed_name in REALTIME_FEEDS:
         results.append(check_realtime_feed(bucket, feed_name, now, args.max_realtime_age_minutes))
+
+    for feed_name in ALERT_FEEDS:
+        results.append(check_realtime_feed(bucket, feed_name, now, args.max_alert_age_minutes))
 
     if not args.skip_static:
         for feed_name in STATIC_FEEDS:
