@@ -70,6 +70,12 @@ def save_forecast(data_root, location_name, payload, now):
     return target_path, object_name
 
 
+def resolve_data_root(path):
+    if path.is_absolute():
+        return path
+    return PROJECT_ROOT / path
+
+
 def upload_to_gcs(bucket, object_name, path):
     if bucket is None:
         return
@@ -107,7 +113,7 @@ def parse_args():
 def main():
     load_dotenv(PROJECT_ROOT / ".env")
     args = parse_args()
-    data_root = args.data_root.resolve()
+    data_root = resolve_data_root(args.data_root).resolve()
     gcs_bucket = make_gcs_bucket(os.getenv("GCS_BUCKET"))
     now = utc_now()
 
