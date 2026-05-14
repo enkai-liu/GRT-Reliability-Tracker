@@ -52,6 +52,36 @@ gcloud compute ssh grt-collector-vm --zone us-east1-b \
   --command "/opt/grt-reliability-tracker/collector/.venv/bin/python /opt/grt-reliability-tracker/collector/health_check.py"
 ```
 
+## Daily Parse Job
+
+The VM installs a `systemd` timer that parses yesterday's raw and static GTFS snapshots once per day:
+
+```text
+grt-daily-parse.timer
+grt-daily-parse.service
+```
+
+Check the timer:
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "systemctl list-timers grt-daily-parse.timer --no-pager"
+```
+
+Run the parse job manually for a date:
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "sudo -u grtcollector /opt/grt-reliability-tracker/ops/gcp/run_daily_parse.sh YYYY-MM-DD"
+```
+
+Watch parse logs:
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "journalctl -u grt-daily-parse.service -f"
+```
+
 ## Stop Collection
 
 ```bash

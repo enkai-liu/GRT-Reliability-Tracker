@@ -1,0 +1,11 @@
+[Unit]
+Description=Run daily GRT GTFS parse job
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+Unit=grt-daily-parse.service
+
+[Install]
+WantedBy=timers.target

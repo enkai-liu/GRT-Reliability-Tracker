@@ -2,7 +2,9 @@
 set -euo pipefail
 
 PROJECT_DIR="/opt/grt-reliability-tracker"
-SERVICE_NAME="grt-collector.service"
+COLLECTOR_SERVICE="grt-collector.service"
+PARSE_SERVICE="grt-daily-parse.service"
+PARSE_TIMER="grt-daily-parse.timer"
 SERVICE_USER="grtcollector"
 
 if [[ "${EUID}" -ne 0 ]]; then
@@ -24,10 +26,18 @@ python3 -m venv "$PROJECT_DIR/collector/.venv"
 "$PROJECT_DIR/collector/.venv/bin/python" -m pip install --upgrade pip
 "$PROJECT_DIR/collector/.venv/bin/python" -m pip install -r "$PROJECT_DIR/collector/requirements.txt"
 
-cp "$PROJECT_DIR/ops/gcp/$SERVICE_NAME" "/etc/systemd/system/$SERVICE_NAME"
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-systemctl restart "$SERVICE_NAME"
+chmod +x "$PROJECT_DIR/ops/gcp/run_daily_parse.sh"
 
-echo "Installed and started $SERVICE_NAME"
-echo "Check logs with: journalctl -u $SERVICE_NAME -f"
+cp "$PROJECT_DIR/ops/gcp/$COLLECTOR_SERVICE" "/etc/systemd/system/$COLLECTOR_SERVICE"
+cp "$PROJECT_DIR/ops/gcp/$PARSE_SERVICE" "/etc/systemd/system/$PARSE_SERVICE"
+cp "$PROJECT_DIR/ops/gcp/$PARSE_TIMER" "/etc/systemd/system/$PARSE_TIMER"
+systemctl daemon-reload
+systemctl enable "$COLLECTOR_SERVICE"
+systemctl restart "$COLLECTOR_SERVICE"
+systemctl enable "$PARSE_TIMER"
+systemctl restart "$PARSE_TIMER"
+
+echo "Installed and started $COLLECTOR_SERVICE"
+echo "Installed and started $PARSE_TIMER"
+echo "Check collector logs with: journalctl -u $COLLECTOR_SERVICE -f"
+echo "Check parse logs with: journalctl -u $PARSE_SERVICE -f"

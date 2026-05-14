@@ -1,0 +1,12 @@
+[Unit]
+Description=Parse daily GRT GTFS snapshots to Parquet
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/grt-reliability-tracker
+EnvironmentFile=/opt/grt-reliability-tracker/.env
+ExecStart=/opt/grt-reliability-tracker/ops/gcp/run_daily_parse.sh
+User=grtcollector
+Group=grtcollector
