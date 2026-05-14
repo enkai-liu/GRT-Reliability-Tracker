@@ -45,6 +45,13 @@ gcloud compute ssh grt-collector-vm --zone us-east1-b \
   --command "journalctl -u grt-collector.service -f"
 ```
 
+## Run Health Check
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b \
+  --command "/opt/grt-reliability-tracker/collector/.venv/bin/python /opt/grt-reliability-tracker/collector/health_check.py"
+```
+
 ## Stop Collection
 
 ```bash

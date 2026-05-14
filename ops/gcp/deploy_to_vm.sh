@@ -52,7 +52,8 @@ tar \
   --exclude="./collector/__pycache__" \
   -czf "$ARCHIVE" .
 
-gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "sudo mkdir -p /opt/grt-reliability-tracker && sudo chown \$(whoami) /opt/grt-reliability-tracker"
+gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "sudo systemctl stop grt-collector.service >/dev/null 2>&1 || true"
+gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "sudo rm -rf /opt/grt-reliability-tracker && sudo mkdir -p /opt/grt-reliability-tracker && sudo chown \$(whoami) /opt/grt-reliability-tracker"
 gcloud compute scp "$ARCHIVE" "$VM_NAME:/tmp/grt-reliability-tracker-vm.tar.gz" --zone "$ZONE"
 gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "tar -xzf /tmp/grt-reliability-tracker-vm.tar.gz -C /opt/grt-reliability-tracker"
 gcloud compute ssh "$VM_NAME" --zone "$ZONE" --command "printf '%s\n' 'POLL_SECONDS=30' 'DATA_ROOT=data' 'GCS_BUCKET=$BUCKET_NAME' > /opt/grt-reliability-tracker/.env"

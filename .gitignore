@@ -18,6 +18,8 @@ __pycache__/
 data/**
 !data/
 !data/README.md
+!data/parsed/.gitkeep
+!data/parsed_static_gtfs/.gitkeep
 logs/
 *.log
 

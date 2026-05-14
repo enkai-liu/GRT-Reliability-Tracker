@@ -1,4 +1,5 @@
 google-cloud-storage==3.6.0
 gtfs-realtime-bindings==2.0.0
+pyarrow==23.0.0
 python-dotenv==1.2.2
 requests==2.34.1

@@ -1,35 +1,8 @@
 # GRT Reliability Tracker
 
-Collector and early data tooling for a Grand River Transit reliability and delay prediction project.
+Collector and parsing tools for Grand River Transit GTFS-Realtime and static GTFS data.
 
-The current phase stores raw GTFS-Realtime snapshots for later parsing, analysis, and model training. It polls GRT bus/LRT realtime feeds every 30 seconds, stores static GTFS ZIPs once per UTC day, and can upload all snapshots to Google Cloud Storage.
-
-## What It Collects
-
-Realtime feeds:
-
-- Bus trip updates
-- Bus vehicle positions
-- LRT trip updates
-- LRT vehicle positions
-
-Static feeds:
-
-- Bus static GTFS ZIP
-- LRT static GTFS ZIP
-
-Default output layout:
-
-```text
-data/raw/bus_trip_updates/YYYY-MM-DD/timestamp.pb
-data/raw/bus_vehicle_positions/YYYY-MM-DD/timestamp.pb
-data/raw/lrt_trip_updates/YYYY-MM-DD/timestamp.pb
-data/raw/lrt_vehicle_positions/YYYY-MM-DD/timestamp.pb
-data/static_gtfs/bus_static_gtfs/YYYY-MM-DD/GTFS.zip
-data/static_gtfs/lrt_static_gtfs/YYYY-MM-DD/GTFS.zip
-```
-
-## Local Setup
+## Setup
 
 ```bash
 python3 -m venv collector/.venv
@@ -37,28 +10,28 @@ collector/.venv/bin/python -m pip install -r collector/requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` if you want GCS uploads:
+Set `GCS_BUCKET` in `.env` to upload snapshots and parsed tables to Google Cloud Storage.
 
-```bash
-GCS_BUCKET=your-bucket-name
-```
-
-Run one collection batch:
+## Collect
 
 ```bash
 collector/.venv/bin/python collector/collect_feeds.py --once
-```
-
-Run continuously:
-
-```bash
 collector/.venv/bin/python collector/collect_feeds.py
 ```
 
-## GCP Deployment
+## Parse
 
-The collector is currently designed to run on a small Compute Engine VM using `systemd`.
+```bash
+collector/.venv/bin/python collector/parse_snapshots.py --date YYYY-MM-DD --sync-from-gcs --upload-to-gcs --overwrite
+collector/.venv/bin/python collector/parse_static_gtfs.py --date YYYY-MM-DD --sync-from-gcs --upload-to-gcs --overwrite
+```
 
-See:
+## Health Check
 
-- [GCP VM deployment](ops/gcp/README.md)
+```bash
+collector/.venv/bin/python collector/health_check.py
+```
+
+## Deployment
+
+See [ops/gcp/README.md](ops/gcp/README.md) for the Compute Engine VM deployment.

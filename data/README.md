@@ -15,4 +15,14 @@ raw/
 static_gtfs/
   bus_static_gtfs/YYYY-MM-DD/GTFS.zip
   lrt_static_gtfs/YYYY-MM-DD/GTFS.zip
+parsed/
+  feed_snapshots/date=YYYY-MM-DD/part-000.parquet
+  vehicle_positions/date=YYYY-MM-DD/part-000.parquet
+  trip_updates/date=YYYY-MM-DD/part-000.parquet
+  stop_time_updates/date=YYYY-MM-DD/part-000.parquet
+parsed_static_gtfs/
+  routes/p_feed=bus_static_gtfs/p_snapshot_date=YYYY-MM-DD/part-000.parquet
+  stops/p_feed=bus_static_gtfs/p_snapshot_date=YYYY-MM-DD/part-000.parquet
+  trips/p_feed=bus_static_gtfs/p_snapshot_date=YYYY-MM-DD/part-000.parquet
+  stop_times/p_feed=bus_static_gtfs/p_snapshot_date=YYYY-MM-DD/part-000.parquet
 ```
