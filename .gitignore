@@ -23,6 +23,11 @@ data/**
 logs/
 *.log
 
+# Generated dashboard data
+dashboard/data/**
+!dashboard/data/
+!dashboard/data/.gitkeep
+
 # Local OS/editor noise
 .DS_Store
 .vscode/

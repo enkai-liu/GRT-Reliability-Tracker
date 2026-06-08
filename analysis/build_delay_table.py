@@ -73,6 +73,7 @@ def build_delay_table(con, parsed_root, static_root, dates, overwrite):
     static_stop_times AS (
         SELECT
             p_feed,
+            p_snapshot_date,
             trip_id,
             stop_id,
             CAST(stop_sequence AS INTEGER) AS stop_sequence,
@@ -131,8 +132,13 @@ def build_delay_table(con, parsed_root, static_root, dates, overwrite):
         JOIN static_stop_times s
             ON r.trip_id = s.trip_id
             AND r.stop_id = s.stop_id
-            AND r.stop_sequence = s.stop_sequence
+            AND CASE
+                    -- LRT realtime stop_sequence is one-based; static GTFS is zero-based.
+                    WHEN r.static_feed = 'lrt_static_gtfs' THEN r.stop_sequence - 1
+                    ELSE r.stop_sequence
+                END = s.stop_sequence
             AND r.static_feed = s.p_feed
+            AND r.snapshot_date = s.p_snapshot_date
     ),
 
     with_delay AS (

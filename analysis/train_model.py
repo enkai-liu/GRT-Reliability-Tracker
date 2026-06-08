@@ -23,7 +23,6 @@ from pathlib import Path
 
 import duckdb
 import lightgbm as lgb
-import pyarrow.parquet as pq
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FEATURES_ROOT = PROJECT_ROOT / "data" / "analysis" / "features"
@@ -73,8 +72,27 @@ def load_features(con, features_root):
     return count, dates
 
 
-def build_baselines(con, output_root):
-    """Compute and save baseline lookup tables."""
+def get_time_split(con):
+    """Return train and validation dates using the same time split for all models."""
+    dates = [row[0] for row in con.sql(
+        "SELECT DISTINCT snapshot_date FROM features ORDER BY snapshot_date"
+    ).fetchall()]
+
+    if len(dates) < 2:
+        print("WARNING: Only 1 date available. Using full dataset for training and validation.")
+        return dates, dates
+
+    split_idx = max(1, int(len(dates) * 0.8))
+    return dates[:split_idx], dates[split_idx:]
+
+
+def date_filter_sql(date_list):
+    return ", ".join(f"'{d}'" for d in date_list)
+
+
+def build_baselines(con, output_root, train_dates):
+    """Compute and save baseline lookup tables from training dates only."""
+    train_filter = date_filter_sql(train_dates)
 
     # Baseline 1: route-hour average
     con.sql(f"""
@@ -87,6 +105,7 @@ def build_baselines(con, output_root):
             avg(delay_seconds) AS mean_delay,
             count(*) AS sample_count
         FROM features
+        WHERE snapshot_date IN ({train_filter})
         GROUP BY route_id, hour_of_day, is_weekend
     """)
     con.sql(f"COPY route_hour_avg TO '{output_root}/route_hour_avg.parquet' (FORMAT PARQUET)")
@@ -105,6 +124,7 @@ def build_baselines(con, output_root):
             avg(delay_seconds) AS mean_delay,
             count(*) AS sample_count
         FROM features
+        WHERE snapshot_date IN ({train_filter})
         GROUP BY route_id, stop_id, hour_of_day, is_weekend
     """)
     con.sql(f"COPY route_stop_hour_avg TO '{output_root}/route_stop_hour_avg.parquet' (FORMAT PARQUET)")
@@ -112,34 +132,46 @@ def build_baselines(con, output_root):
     print(f"Baseline 2 (route-stop-hour avg): {rsha_count} lookup entries")
 
 
-def evaluate_baselines(con):
-    """Compute MAE for each baseline on the full dataset."""
+def evaluate_baselines(con, val_dates):
+    """Compute validation MAE for each baseline."""
     results = {}
+    val_filter = date_filter_sql(val_dates)
 
     # Baseline 0: schedule (predict 0)
-    mae_0 = con.sql("SELECT avg(abs(delay_seconds)) FROM features").fetchone()[0]
+    mae_0 = con.sql(f"""
+        SELECT avg(abs(delay_seconds))
+        FROM features
+        WHERE snapshot_date IN ({val_filter})
+    """).fetchone()[0]
     results["schedule (delay=0)"] = mae_0
 
     # Baseline 1: route-hour average
-    mae_1 = con.sql("""
+    mae_1 = con.sql(f"""
         SELECT avg(abs(f.delay_seconds - COALESCE(b.median_delay, 0)))
         FROM features f
         LEFT JOIN route_hour_avg b
             ON f.route_id = b.route_id
             AND f.hour_of_day = b.hour_of_day
             AND f.is_weekend = b.is_weekend
+        WHERE f.snapshot_date IN ({val_filter})
     """).fetchone()[0]
     results["route-hour avg"] = mae_1
 
-    # Baseline 2: route-stop-hour average
-    mae_2 = con.sql("""
-        SELECT avg(abs(f.delay_seconds - COALESCE(b.median_delay, 0)))
+    # Baseline 2: route-stop-hour average. Fall back to route-hour where a
+    # route/stop/hour bucket was not observed in the training window.
+    mae_2 = con.sql(f"""
+        SELECT avg(abs(f.delay_seconds - COALESCE(b.median_delay, rh.median_delay, 0)))
         FROM features f
         LEFT JOIN route_stop_hour_avg b
             ON f.route_id = b.route_id
             AND f.stop_id = b.stop_id
             AND f.hour_of_day = b.hour_of_day
             AND f.is_weekend = b.is_weekend
+        LEFT JOIN route_hour_avg rh
+            ON f.route_id = rh.route_id
+            AND f.hour_of_day = rh.hour_of_day
+            AND f.is_weekend = rh.is_weekend
+        WHERE f.snapshot_date IN ({val_filter})
     """).fetchone()[0]
     results["route-stop-hour avg"] = mae_2
 
@@ -148,8 +180,6 @@ def evaluate_baselines(con):
 
 def prepare_lgbm_data(con):
     """Extract feature matrix and target for LightGBM."""
-    feature_cols = ", ".join(ALL_FEATURES)
-
     # Convert booleans to int and categoricals to codes in DuckDB
     select_parts = []
     for f in NUMERIC_FEATURES:
@@ -170,24 +200,9 @@ def prepare_lgbm_data(con):
     return result, columns
 
 
-def train_lgbm(con, output_root, num_dates):
+def train_lgbm(con, output_root, train_dates, val_dates):
     """Train LightGBM model with time-based split."""
     import numpy as np
-
-    # Get sorted unique dates for time-based split
-    dates = [row[0] for row in con.sql(
-        "SELECT DISTINCT snapshot_date FROM features ORDER BY snapshot_date"
-    ).fetchall()]
-
-    if len(dates) < 2:
-        print("WARNING: Only 1 date available. Using full dataset for training (no validation).")
-        train_dates = dates
-        val_dates = dates  # same data for "validation" — just to get a number
-    else:
-        # Use last ~20% of dates as validation
-        split_idx = max(1, int(len(dates) * 0.8))
-        train_dates = dates[:split_idx]
-        val_dates = dates[split_idx:]
 
     print(f"Train dates: {train_dates[0]}..{train_dates[-1]} ({len(train_dates)} days)")
     print(f"Val dates:   {val_dates[0]}..{val_dates[-1]} ({len(val_dates)} days)")
@@ -261,7 +276,7 @@ def train_lgbm(con, output_root, num_dates):
     }
 
     callbacks = [lgb.log_evaluation(50)]
-    if len(dates) >= 2:
+    if train_dates != val_dates:
         callbacks.append(lgb.early_stopping(20))
 
     model = lgb.train(
@@ -304,11 +319,14 @@ def train_lgbm(con, output_root, num_dates):
     }
 
 
-def write_evaluation(output_root, baseline_results, lgbm_results):
+def write_evaluation(output_root, baseline_results, lgbm_results, train_dates, val_dates):
     """Write evaluation comparison report."""
     lines = ["Delay Prediction Model Evaluation", "=" * 40, ""]
+    lines.append(f"Train dates: {train_dates[0]}..{train_dates[-1]} ({len(train_dates)} days)")
+    lines.append(f"Val dates:   {val_dates[0]}..{val_dates[-1]} ({len(val_dates)} days)")
+    lines.append("")
 
-    lines.append("MAE (seconds) — lower is better:")
+    lines.append("Validation MAE (seconds) — lower is better:")
     lines.append("-" * 40)
 
     all_results = {**baseline_results}
@@ -342,6 +360,8 @@ def write_evaluation(output_root, baseline_results, lgbm_results):
     json_path = output_root / "evaluation.json"
     json_data = {
         "baselines": {k: float(v) for k, v in baseline_results.items()},
+        "train_dates": train_dates,
+        "val_dates": val_dates,
     }
     if lgbm_results:
         json_data["lgbm"] = {
@@ -384,20 +404,25 @@ def main():
         print("No feature data found.")
         raise SystemExit(1)
 
-    print("\nBuilding baselines...")
-    build_baselines(con, output_root)
-    baseline_results = evaluate_baselines(con)
+    train_dates, val_dates = get_time_split(con)
 
-    print("\nBaseline MAE (seconds):")
+    print(f"Train dates: {train_dates[0]}..{train_dates[-1]} ({len(train_dates)} days)")
+    print(f"Val dates:   {val_dates[0]}..{val_dates[-1]} ({len(val_dates)} days)")
+
+    print("\nBuilding baselines...")
+    build_baselines(con, output_root, train_dates)
+    baseline_results = evaluate_baselines(con, val_dates)
+
+    print("\nBaseline validation MAE (seconds):")
     for name, mae in sorted(baseline_results.items(), key=lambda x: x[1]):
         print(f"  {name}: {mae:.1f}s")
 
     lgbm_results = None
     if not args.skip_lgbm:
         print("\nTraining LightGBM model...")
-        lgbm_results = train_lgbm(con, output_root, num_dates)
+        lgbm_results = train_lgbm(con, output_root, train_dates, val_dates)
 
-    write_evaluation(output_root, baseline_results, lgbm_results)
+    write_evaluation(output_root, baseline_results, lgbm_results, train_dates, val_dates)
 
 
 if __name__ == "__main__":

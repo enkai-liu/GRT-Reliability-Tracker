@@ -65,26 +65,36 @@ def build_features(con, delay_root, weather_path, static_root, dates):
     query = f"""
     WITH trip_max_seq AS (
         -- Compute max stop_sequence per trip for normalization
-        SELECT trip_id, p_feed, MAX(CAST(stop_sequence AS INTEGER)) AS max_stop_seq
+        SELECT
+            trip_id,
+            p_feed,
+            p_snapshot_date,
+            MAX(CAST(stop_sequence AS INTEGER)) AS max_stop_seq
         FROM read_parquet('{static_root}/stop_times/p_feed=*/p_snapshot_date=*/part-000.parquet',
                           hive_partitioning=true)
-        GROUP BY trip_id, p_feed
+        GROUP BY trip_id, p_feed, p_snapshot_date
     ),
 
     routes AS (
-        SELECT DISTINCT route_id, route_short_name, route_type
+        SELECT DISTINCT p_feed, p_snapshot_date, route_id, route_short_name, route_type
         FROM read_parquet('{static_root}/routes/p_feed=*/p_snapshot_date=*/part-000.parquet',
                           hive_partitioning=true)
     ),
 
     trips AS (
-        SELECT DISTINCT trip_id, trip_headsign, service_id, direction_id AS static_direction_id
+        SELECT DISTINCT
+            p_feed,
+            p_snapshot_date,
+            trip_id,
+            trip_headsign,
+            service_id,
+            direction_id AS static_direction_id
         FROM read_parquet('{static_root}/trips/p_feed=*/p_snapshot_date=*/part-000.parquet',
                           hive_partitioning=true)
     ),
 
     stops AS (
-        SELECT DISTINCT stop_id, stop_name, stop_lat, stop_lon
+        SELECT DISTINCT p_feed, p_snapshot_date, stop_id, stop_name, stop_lat, stop_lon
         FROM read_parquet('{static_root}/stops/p_feed=*/p_snapshot_date=*/part-000.parquet',
                           hive_partitioning=true)
     )
@@ -96,7 +106,7 @@ def build_features(con, delay_root, weather_path, static_root, dates):
             d.route_id,
             d.stop_id,
             d.stop_sequence,
-            d.direction_id,
+            COALESCE(d.direction_id, TRY_CAST(t.static_direction_id AS BIGINT)) AS direction_id,
             d.feed_name,
 
             -- Target
@@ -135,7 +145,13 @@ def build_features(con, delay_root, weather_path, static_root, dates):
 
             -- Stop sequence normalized (0 to 1 within trip)
             CASE WHEN tms.max_stop_seq > 0
-                THEN d.stop_sequence::DOUBLE / tms.max_stop_seq
+                THEN (
+                    CASE
+                        -- LRT realtime stop_sequence is one-based; static GTFS is zero-based.
+                        WHEN d.feed_name LIKE 'lrt_%' THEN d.stop_sequence - 1
+                        ELSE d.stop_sequence
+                    END
+                )::DOUBLE / tms.max_stop_seq
                 ELSE 0.0
             END AS stop_sequence_normalized,
 
@@ -146,12 +162,22 @@ def build_features(con, delay_root, weather_path, static_root, dates):
             CASE WHEN d.feed_name LIKE 'bus_%' THEN 'bus' ELSE 'lrt' END AS transit_mode
 
     FROM read_parquet('{delay_root}/date=*/part-000.parquet', hive_partitioning=true) d
-    LEFT JOIN routes r ON d.route_id = r.route_id
-    LEFT JOIN trips t ON d.trip_id = t.trip_id
-    LEFT JOIN stops s ON d.stop_id = s.stop_id
+    LEFT JOIN routes r
+        ON d.route_id = r.route_id
+        AND CASE WHEN d.feed_name LIKE 'bus_%' THEN 'bus_static_gtfs' ELSE 'lrt_static_gtfs' END = r.p_feed
+        AND d.snapshot_date = r.p_snapshot_date
+    LEFT JOIN trips t
+        ON d.trip_id = t.trip_id
+        AND CASE WHEN d.feed_name LIKE 'bus_%' THEN 'bus_static_gtfs' ELSE 'lrt_static_gtfs' END = t.p_feed
+        AND d.snapshot_date = t.p_snapshot_date
+    LEFT JOIN stops s
+        ON d.stop_id = s.stop_id
+        AND CASE WHEN d.feed_name LIKE 'bus_%' THEN 'bus_static_gtfs' ELSE 'lrt_static_gtfs' END = s.p_feed
+        AND d.snapshot_date = s.p_snapshot_date
     LEFT JOIN trip_max_seq tms
         ON d.trip_id = tms.trip_id
         AND CASE WHEN d.feed_name LIKE 'bus_%' THEN 'bus_static_gtfs' ELSE 'lrt_static_gtfs' END = tms.p_feed
+        AND d.snapshot_date = tms.p_snapshot_date
     {weather_join}
     {date_filter}
     ORDER BY d.snapshot_date, d.trip_id, d.stop_sequence

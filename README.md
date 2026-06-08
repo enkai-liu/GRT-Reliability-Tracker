@@ -37,6 +37,27 @@ collector/.venv/bin/python collector/run_local_parse.py --start-date YYYY-MM-DD 
 collector/.venv/bin/python collector/health_check.py
 ```
 
+## Reliability Analysis
+
+```bash
+collector/.venv/bin/python analysis/build_delay_table.py --overwrite
+collector/.venv/bin/python analysis/build_weather_features.py --overwrite
+collector/.venv/bin/python analysis/build_features.py --overwrite
+collector/.venv/bin/python analysis/build_reliability_tables.py
+collector/.venv/bin/python analysis/export_dashboard_data.py
+```
+
+See [analysis/README.md](analysis/README.md) for the generated summary tables.
+
+## Dashboard
+
+```bash
+collector/.venv/bin/python -m http.server 8765 --directory dashboard
+```
+
+Open `http://127.0.0.1:8765/`. The dashboard reads generated local JSON from
+`dashboard/data/dashboard-data.json`, which is ignored by Git.
+
 ## Deployment
 
 See [ops/gcp/README.md](ops/gcp/README.md) for the Compute Engine VM deployment.
