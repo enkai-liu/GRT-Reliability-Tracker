@@ -40,3 +40,32 @@ collector/.venv/bin/python analysis/build_reliability_tables.py \
   --date 2026-06-02 \
   --min-observations 500
 ```
+
+## Delay Prediction
+
+For training, keep every GTFS-RT stop-time snapshot, then build a live feature
+table with a 10-minute stride so the dataset remains practical for local model
+training:
+
+```bash
+collector/.venv/bin/python analysis/build_delay_table.py --overwrite \
+  --keep-all-snapshots --output-root data/analysis/delay_table_snapshots
+collector/.venv/bin/python analysis/build_features.py --overwrite \
+  --delay-root data/analysis/delay_table_snapshots \
+  --output-root data/analysis/features_live \
+  --snapshot-stride-minutes 10
+collector/.venv/bin/python analysis/train_model.py \
+  --features-root data/analysis/features_live \
+  --output-root data/analysis/models_live \
+  --max-train-rows 2000000 \
+  --max-val-rows 500000 \
+  --late-delay-weight 3.0
+```
+
+The live feature table uses the final pre-arrival delay for each trip-stop as
+the target, preserves the current GTFS-RT predicted delay as an input, and adds
+snapshot-history and vehicle-position features.
+
+`--late-delay-weight` increases the training/evaluation weight for rows where
+the final delay is above `--late-delay-threshold-seconds`, which defaults to
+300 seconds.

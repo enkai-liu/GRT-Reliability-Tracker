@@ -30,6 +30,7 @@ DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "data" / "analysis" / "models"
 
 # Features for LightGBM
 NUMERIC_FEATURES = [
+    "current_predicted_delay_seconds",
     "stop_sequence_normalized",
     "hour_of_day",
     "minute_of_hour",
@@ -38,6 +39,24 @@ NUMERIC_FEATURES = [
     "wind_speed_kmh",
     "precip_probability_pct",
     "prediction_lead_minutes",
+    "prior_prediction_count",
+    "previous_predicted_delay_seconds",
+    "previous_2_predicted_delay_seconds",
+    "previous_5_predicted_delay_seconds",
+    "predicted_delay_delta_seconds",
+    "minutes_since_previous_prediction",
+    "recent_predicted_delay_mean_5",
+    "recent_predicted_delay_min_5",
+    "recent_predicted_delay_max_5",
+    "previous_stop_predicted_delay_seconds",
+    "previous_stop_predicted_delay_delta_seconds",
+    "vehicle_speed",
+    "vehicle_current_stop_sequence",
+    "vehicle_current_status",
+    "vehicle_update_age_seconds",
+    "vehicle_distance_to_stop_m",
+    "vehicle_stop_sequence_delta",
+    "route_type",
 ]
 
 BOOLEAN_FEATURES = [
@@ -46,10 +65,13 @@ BOOLEAN_FEATURES = [
     "is_rain",
     "is_snow",
     "is_precip",
+    "is_vehicle_update_stale",
 ]
 
 CATEGORICAL_FEATURES = [
     "route_id",
+    "stop_id",
+    "direction_id",
     "transit_mode",
 ]
 
@@ -145,6 +167,22 @@ def evaluate_baselines(con, val_dates):
     """).fetchone()[0]
     results["schedule (delay=0)"] = mae_0
 
+    # Baseline 0b: use the current GTFS-RT predicted delay directly. This is
+    # the model's main practical benchmark when training on all snapshots.
+    raw_prediction_count = con.sql("""
+        SELECT count(*)
+        FROM information_schema.columns
+        WHERE table_name = 'features'
+          AND column_name = 'current_predicted_delay_seconds'
+    """).fetchone()[0]
+    if raw_prediction_count:
+        mae_raw = con.sql(f"""
+            SELECT avg(abs(delay_seconds - current_predicted_delay_seconds))
+            FROM features
+            WHERE snapshot_date IN ({val_filter})
+        """).fetchone()[0]
+        results["raw GTFS-RT prediction"] = mae_raw
+
     # Baseline 1: route-hour average
     mae_1 = con.sql(f"""
         SELECT avg(abs(f.delay_seconds - COALESCE(b.median_delay, 0)))
@@ -187,7 +225,7 @@ def prepare_lgbm_data(con):
     for f in BOOLEAN_FEATURES:
         select_parts.append(f"CAST(COALESCE({f}, false) AS INTEGER) AS {f}")
     for f in CATEGORICAL_FEATURES:
-        select_parts.append(f)
+        select_parts.append(f"CAST({f} AS VARCHAR) AS {f}")
 
     select_sql = ", ".join(select_parts)
 
@@ -200,7 +238,16 @@ def prepare_lgbm_data(con):
     return result, columns
 
 
-def train_lgbm(con, output_root, train_dates, val_dates):
+def train_lgbm(
+    con,
+    output_root,
+    train_dates,
+    val_dates,
+    max_train_rows,
+    max_val_rows,
+    late_delay_threshold_seconds,
+    late_delay_weight,
+):
     """Train LightGBM model with time-based split."""
     import numpy as np
 
@@ -214,36 +261,62 @@ def train_lgbm(con, output_root, train_dates, val_dates):
     for f in BOOLEAN_FEATURES:
         feature_select.append(f"CAST(COALESCE({f}, false) AS DOUBLE) AS {f}")
     for f in CATEGORICAL_FEATURES:
-        # Encode categoricals as integers for LightGBM
-        if f == "route_id":
-            feature_select.append(f"CAST({f} AS INTEGER) AS {f}")
-        elif f == "transit_mode":
-            feature_select.append(f"CASE WHEN {f} = 'bus' THEN 0 ELSE 1 END AS {f}")
-        else:
-            feature_select.append(f"hash({f}) % 10000 AS {f}")
+        # LightGBM expects categorical features as integer codes.
+        feature_select.append(
+            f"CAST(hash(COALESCE(CAST({f} AS VARCHAR), '')) % 100000 AS INTEGER) AS {f}"
+        )
 
     select_sql = ", ".join(feature_select)
 
-    def fetch_split(date_list):
+    def fetch_split(date_list, max_rows):
         dl = ", ".join(f"'{d}'" for d in date_list)
+        limit_sql = ""
+        order_sql = ""
+        if max_rows:
+            order_sql = """
+            ORDER BY hash(
+                COALESCE(CAST(snapshot_date AS VARCHAR), ''),
+                COALESCE(CAST(trip_id AS VARCHAR), ''),
+                COALESCE(CAST(stop_id AS VARCHAR), ''),
+                COALESCE(CAST(collected_at_utc AS VARCHAR), '')
+            )
+            """
+            limit_sql = f"LIMIT {max_rows}"
+
         rows = con.sql(f"""
-            SELECT {select_sql}, {TARGET}
+            SELECT
+                {select_sql},
+                {TARGET},
+                CASE
+                    WHEN {TARGET} > {late_delay_threshold_seconds}
+                    THEN {late_delay_weight}
+                    ELSE 1.0
+                END AS sample_weight
             FROM features
             WHERE snapshot_date IN ({dl})
+            {order_sql}
+            {limit_sql}
         """).fetchall()
 
         n_features = len(NUMERIC_FEATURES) + len(BOOLEAN_FEATURES) + len(CATEGORICAL_FEATURES)
         X = np.zeros((len(rows), n_features), dtype=np.float64)
         y = np.zeros(len(rows), dtype=np.float64)
+        weights = np.ones(len(rows), dtype=np.float64)
         for i, row in enumerate(rows):
             X[i, :] = [float(v) if v is not None else np.nan for v in row[:n_features]]
             y[i] = row[n_features]
-        return X, y
+            weights[i] = row[n_features + 1]
+        return X, y, weights
 
-    X_train, y_train = fetch_split(train_dates)
-    X_val, y_val = fetch_split(val_dates)
+    X_train, y_train, train_weights = fetch_split(train_dates, max_train_rows)
+    X_val, y_val, val_weights = fetch_split(val_dates, max_val_rows)
 
     print(f"Training set: {len(y_train)} rows, Validation set: {len(y_val)} rows")
+    if late_delay_weight != 1.0:
+        print(
+            "Late-delay weighting: "
+            f"{late_delay_weight:g}x for target delay > {late_delay_threshold_seconds:g}s"
+        )
 
     # Create LightGBM datasets
     feature_names = NUMERIC_FEATURES + BOOLEAN_FEATURES + CATEGORICAL_FEATURES
@@ -251,12 +324,14 @@ def train_lgbm(con, output_root, train_dates, val_dates):
 
     train_data = lgb.Dataset(
         X_train, label=y_train,
+        weight=train_weights,
         feature_name=feature_names,
         categorical_feature=[feature_names[i] for i in cat_indices],
         free_raw_data=False,
     )
     val_data = lgb.Dataset(
         X_val, label=y_val,
+        weight=val_weights,
         feature_name=feature_names,
         categorical_feature=[feature_names[i] for i in cat_indices],
         reference=train_data,
@@ -297,10 +372,14 @@ def train_lgbm(con, output_root, train_dates, val_dates):
     import numpy as np
     val_pred = model.predict(X_val)
     val_mae = np.mean(np.abs(y_val - val_pred))
+    val_weighted_mae = np.average(np.abs(y_val - val_pred), weights=val_weights)
     val_rmse = np.sqrt(np.mean((y_val - val_pred) ** 2))
+    val_miss_risk_mean = np.mean(np.maximum(val_pred - y_val, 0))
+    val_wait_risk_mean = np.mean(np.maximum(y_val - val_pred, 0))
 
     train_pred = model.predict(X_train)
     train_mae = np.mean(np.abs(y_train - train_pred))
+    train_weighted_mae = np.average(np.abs(y_train - train_pred), weights=train_weights)
 
     # Feature importance
     importance = dict(zip(feature_names, model.feature_importance(importance_type="gain")))
@@ -308,8 +387,14 @@ def train_lgbm(con, output_root, train_dates, val_dates):
 
     return {
         "train_mae": float(train_mae),
+        "train_weighted_mae": float(train_weighted_mae),
         "val_mae": float(val_mae),
+        "val_weighted_mae": float(val_weighted_mae),
         "val_rmse": float(val_rmse),
+        "val_miss_risk_mean": float(val_miss_risk_mean),
+        "val_wait_risk_mean": float(val_wait_risk_mean),
+        "late_delay_threshold_seconds": float(late_delay_threshold_seconds),
+        "late_delay_weight": float(late_delay_weight),
         "feature_importance": importance,
         "train_rows": len(y_train),
         "val_rows": len(y_val),
@@ -340,8 +425,23 @@ def write_evaluation(output_root, baseline_results, lgbm_results, train_dates, v
         lines.append("")
         lines.append(f"LightGBM Details:")
         lines.append(f"  Train MAE: {lgbm_results['train_mae']:.1f}s")
+        lines.append(f"  Train weighted MAE: {lgbm_results['train_weighted_mae']:.1f}s")
         lines.append(f"  Val MAE:   {lgbm_results['val_mae']:.1f}s")
+        lines.append(f"  Val weighted MAE:   {lgbm_results['val_weighted_mae']:.1f}s")
         lines.append(f"  Val RMSE:  {lgbm_results['val_rmse']:.1f}s")
+        lines.append(
+            "  Miss-risk mean overprediction: "
+            f"{lgbm_results['val_miss_risk_mean']:.1f}s"
+        )
+        lines.append(
+            "  Wait-risk mean underprediction: "
+            f"{lgbm_results['val_wait_risk_mean']:.1f}s"
+        )
+        lines.append(
+            "  Late-delay weighting: "
+            f"{lgbm_results['late_delay_weight']:.1f}x for target delay "
+            f"> {lgbm_results['late_delay_threshold_seconds']:.0f}s"
+        )
         lines.append(f"  Train rows: {lgbm_results['train_rows']}")
         lines.append(f"  Val rows:   {lgbm_results['val_rows']}")
         lines.append(f"  Best iteration: {lgbm_results['best_iteration']}")
@@ -366,8 +466,14 @@ def write_evaluation(output_root, baseline_results, lgbm_results, train_dates, v
     if lgbm_results:
         json_data["lgbm"] = {
             "train_mae": lgbm_results["train_mae"],
+            "train_weighted_mae": lgbm_results["train_weighted_mae"],
             "val_mae": lgbm_results["val_mae"],
+            "val_weighted_mae": lgbm_results["val_weighted_mae"],
             "val_rmse": lgbm_results["val_rmse"],
+            "val_miss_risk_mean": lgbm_results["val_miss_risk_mean"],
+            "val_wait_risk_mean": lgbm_results["val_wait_risk_mean"],
+            "late_delay_threshold_seconds": lgbm_results["late_delay_threshold_seconds"],
+            "late_delay_weight": lgbm_results["late_delay_weight"],
             "feature_importance": {k: float(v) for k, v in lgbm_results["feature_importance"].items()},
         }
     json_path.write_text(json.dumps(json_data, indent=2))
@@ -386,6 +492,22 @@ def parse_args():
     parser.add_argument(
         "--skip-lgbm", action="store_true",
         help="Only compute baselines, skip LightGBM training.",
+    )
+    parser.add_argument(
+        "--max-train-rows", type=int,
+        help="Deterministically sample at most this many training rows for LightGBM.",
+    )
+    parser.add_argument(
+        "--max-val-rows", type=int,
+        help="Deterministically sample at most this many validation rows for LightGBM.",
+    )
+    parser.add_argument(
+        "--late-delay-threshold-seconds", type=float, default=300.0,
+        help="Rows with target delay above this threshold receive late-delay weighting.",
+    )
+    parser.add_argument(
+        "--late-delay-weight", type=float, default=1.0,
+        help="Training/evaluation weight for rows above --late-delay-threshold-seconds.",
     )
     return parser.parse_args()
 
@@ -420,7 +542,16 @@ def main():
     lgbm_results = None
     if not args.skip_lgbm:
         print("\nTraining LightGBM model...")
-        lgbm_results = train_lgbm(con, output_root, train_dates, val_dates)
+        lgbm_results = train_lgbm(
+            con,
+            output_root,
+            train_dates,
+            val_dates,
+            args.max_train_rows,
+            args.max_val_rows,
+            args.late_delay_threshold_seconds,
+            args.late_delay_weight,
+        )
 
     write_evaluation(output_root, baseline_results, lgbm_results, train_dates, val_dates)
 

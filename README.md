@@ -49,6 +49,23 @@ collector/.venv/bin/python analysis/export_dashboard_data.py
 
 See [analysis/README.md](analysis/README.md) for the generated summary tables.
 
+## Delay Prediction Training
+
+```bash
+collector/.venv/bin/python analysis/build_delay_table.py --overwrite \
+  --keep-all-snapshots --output-root data/analysis/delay_table_snapshots
+collector/.venv/bin/python analysis/build_features.py --overwrite \
+  --delay-root data/analysis/delay_table_snapshots \
+  --output-root data/analysis/features_live \
+  --snapshot-stride-minutes 10
+collector/.venv/bin/python analysis/train_model.py \
+  --features-root data/analysis/features_live \
+  --output-root data/analysis/models_live \
+  --max-train-rows 2000000 \
+  --max-val-rows 500000 \
+  --late-delay-weight 3.0
+```
+
 ## Dashboard
 
 ```bash

@@ -80,7 +80,8 @@ $PYTHON collector/parse_static_gtfs.py \
 
 echo ""
 echo "=== Step 3/6: Build delay table ==="
-$PYTHON analysis/build_delay_table.py $DATE_FLAGS --overwrite
+$PYTHON analysis/build_delay_table.py $DATE_FLAGS --overwrite --keep-all-snapshots \
+    --output-root data/analysis/delay_table_snapshots
 
 echo ""
 echo "=== Step 4/6: Build weather features ==="
@@ -88,11 +89,19 @@ $PYTHON analysis/build_weather_features.py --overwrite
 
 echo ""
 echo "=== Step 5/6: Build enriched features ==="
-$PYTHON analysis/build_features.py $DATE_FLAGS --overwrite
+$PYTHON analysis/build_features.py $DATE_FLAGS --overwrite \
+    --delay-root data/analysis/delay_table_snapshots \
+    --output-root data/analysis/features_live \
+    --snapshot-stride-minutes 10
 
 echo ""
 echo "=== Step 6/6: Train model ==="
-$PYTHON analysis/train_model.py
+$PYTHON analysis/train_model.py \
+    --features-root data/analysis/features_live \
+    --output-root data/analysis/models_live \
+    --max-train-rows 2000000 \
+    --max-val-rows 500000 \
+    --late-delay-weight 3.0
 
 echo ""
 echo "=== Done ==="
