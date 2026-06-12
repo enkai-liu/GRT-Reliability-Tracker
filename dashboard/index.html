@@ -3,154 +3,3428 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>GRT Reliability Dashboard</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>GRT Reliability Atlas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      /* ============================================================
+         GRT Reliability Atlas — Ledger design language throughout.
+         Two views: Atlas (map instrument) + Report (editorial).
+         ============================================================ */
+      :root {
+        --bg: #0e1014;
+        --bg-deep: #0b0d11;
+        --surface: #14171c;
+        --surface-2: #1a1e25;
+        --text: #eae8e1;
+        --mut: #8b919b;
+        --rule: #272c34;
+        --rule-strong: #39404b;
+        --good: #43d9a3;
+        --ok: #5ba8e8;
+        --watch: #e3a43c;
+        --poor: #ff6478;
+        --good-ink: #06281c;
+        --edge: #525a66;
+        --rail-w: 304px;
+        --shadow: 0 18px 44px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
+        --serif: "Newsreader", Georgia, serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body { margin: 0; }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--serif);
+        font-size: 16px;
+        line-height: 1.55;
+      }
+
+      body[data-view="atlas"],
+      body[data-view="planner"] { overflow: hidden; }
+
+      button, input, select { font: inherit; }
+
+      :focus-visible {
+        outline: 2px solid var(--good);
+        outline-offset: 2px;
+      }
+
+      ::selection { background: var(--good); color: var(--good-ink); }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      .at-tools button:active,
+      .at-close:active,
+      .at-item:active,
+      button.at-row:active,
+      .ld-rowbtn:active { transform: translateY(1px); }
+
+      .bar-nav button:active,
+      .at-modes button:active,
+      .ld-filters button:active { color: var(--text); border-bottom-color: var(--mut); }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
+      /* ============================================================
+         Top bar (persistent)
+         ============================================================ */
+      .bar {
+        position: fixed;
+        z-index: 30;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        height: 60px;
+        padding: 0 22px;
+        background: rgba(14, 16, 20, 0.92);
+        border-bottom: 1px solid var(--rule);
+        backdrop-filter: blur(12px);
+      }
+
+      .bar-brand { display: flex; flex-direction: column; line-height: 1.15; }
+
+      .bar-brand span {
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 9.5px;
+        font-weight: 500;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+
+      .bar-brand h1 {
+        margin: 0;
+        font-size: 19px;
+        font-weight: 500;
+        letter-spacing: 0.005em;
+      }
+
+      .bar-brand h1 em { font-style: italic; font-weight: 400; }
+
+      .bar-nav { display: flex; gap: 22px; margin-left: 14px; }
+
+      .bar-nav button {
+        padding: 8px 0;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .bar-nav button:hover { color: var(--text); }
+
+      .bar-nav button[aria-current="page"] {
+        color: var(--text);
+        border-bottom-color: var(--good);
+      }
+
+      .bar-dates {
+        margin-left: auto;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.04em;
+      }
+
+      /* ============================================================
+         ATLAS VIEW — map instrument in the Ledger skin
+         ============================================================ */
+      .atlas {
+        position: fixed;
+        inset: 60px 0 0 0;
+      }
+
+      .at-map {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+        background:
+          radial-gradient(1100px 700px at 60% 40%, rgba(91, 168, 232, 0.05), transparent 65%),
+          var(--bg-deep);
+      }
+
+      /* survey grid lives in the SVG so it shares the map's tilt, pan, and zoom */
+      .at-grid {
+        stroke: rgba(234, 232, 225, 0.05);
+        stroke-width: 1;
+        pointer-events: none;
+      }
+
+      .at-map.dragging { cursor: grabbing; }
+
+      .at-line {
+        cursor: pointer;
+        outline: none;
+      }
+
+      .at-route {
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: var(--w, 2.4px);
+        opacity: 0.8;
+        pointer-events: none;
+        transition: opacity 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
+      }
+
+      /* wide invisible stroke so thin lines are easy to hit */
+      .at-route-hit {
+        fill: none;
+        stroke: transparent;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        pointer-events: stroke;
+      }
+
+      .at-line:hover .at-route,
+      .at-line:focus-visible .at-route {
+        opacity: 1;
+        stroke-width: calc(var(--w, 2.4px) * 1.8);
+        filter: drop-shadow(0 0 2px currentColor);
+      }
+
+      .at-line.dim .at-route { opacity: 0.09; }
+
+      .at-line.dim:hover .at-route,
+      .at-line.dim:focus-visible .at-route { opacity: 0.85; }
+
+      .at-line.sel .at-route {
+        opacity: 1;
+        filter: drop-shadow(0 0 9px rgba(234, 232, 225, 0.25));
+      }
+
+      /* live vehicle markers, shown for the selected route */
+      .at-vehicle {
+        stroke: var(--text);
+        stroke-width: 1.6;
+      }
+
+      .at-vehicle-halo {
+        fill: none;
+        stroke-width: 1.5;
+        pointer-events: none;
+        animation: vehicle-pulse 2.4s ease-out infinite;
+      }
+
+      @keyframes vehicle-pulse {
+        0% { r: var(--vr, 9px); opacity: 0.55; }
+        70% { r: calc(var(--vr, 9px) * 2.2); opacity: 0; }
+        100% { r: calc(var(--vr, 9px) * 2.2); opacity: 0; }
+      }
+
+      /* floating panels */
+      .at-rail,
+      .at-detail,
+      .at-planner {
+        position: absolute;
+        z-index: 8;
+        top: 16px;
+        bottom: 16px;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--rule-strong);
+        border-radius: 14px;
+        background: rgba(20, 23, 28, 0.92);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+        overflow: hidden;
+      }
+
+      .at-rail { right: 16px; width: var(--rail-w); }
+
+      /* ---- planner mode ---- */
+      body[data-view="planner"] .at-rail,
+      body[data-view="planner"] .at-detail { display: none; }
+
+      body[data-view="planner"] .at-tools { right: 16px; }
+
+      body[data-view="planner"] .at-map { cursor: crosshair; }
+
+      body[data-view="planner"] .at-line { pointer-events: none; cursor: default; }
+      body[data-view="planner"] .at-line .at-route { opacity: 0.3; }
+      body[data-view="planner"] .at-map.has-itin .at-line .at-route { opacity: 0.08; }
+
+      .at-planner { left: 16px; width: 376px; display: none; }
+      body[data-view="planner"] .at-planner { display: flex; }
+
+      .pl-scroll {
+        min-height: 0;
+        overflow-y: auto;
+        padding: 18px 16px 20px;
+      }
+
+      .pl-scroll::-webkit-scrollbar { width: 9px; }
+
+      .pl-scroll::-webkit-scrollbar-thumb {
+        background: var(--rule-strong);
+        border: 3px solid var(--surface);
+        border-radius: 99px;
+      }
+
+      .pl-head { margin-bottom: 14px; }
+
+      .pl-head p {
+        margin: 0 0 1px;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 9.5px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .pl-head h2 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 500;
+        line-height: 1.1;
+      }
+
+      .pl-field { position: relative; margin-bottom: 10px; }
+
+      .pl-field label {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 9.5px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .pl-field-row { display: flex; gap: 6px; }
+
+      .pl-field input {
+        flex: 1;
+        min-width: 0;
+        height: 38px;
+        padding: 0 12px;
+        border: 1px solid var(--edge);
+        border-radius: 10px;
+        background: var(--bg-deep);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .pl-field input::placeholder { color: var(--mut); }
+
+      .pl-clear {
+        flex: none;
+        width: 38px;
+        height: 38px;
+        border: 1px solid var(--edge);
+        border-radius: 10px;
+        background: transparent;
+        color: var(--mut);
+        font-size: 14px;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .pl-clear:hover { color: var(--text); border-color: var(--mut); }
+
+      .pl-suggest {
+        position: absolute;
+        z-index: 12;
+        top: 100%;
+        left: 0;
+        right: 0;
+        margin-top: 4px;
+        border: 1px solid var(--rule-strong);
+        border-radius: 10px;
+        background: var(--surface-2);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .pl-suggest button {
+        display: block;
+        width: 100%;
+        padding: 8px 12px;
+        border: 0;
+        border-bottom: 1px dotted var(--rule-strong);
+        background: transparent;
+        color: var(--text);
+        font-size: 14px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .pl-suggest button:last-child { border-bottom: 0; }
+
+      .pl-suggest button:hover,
+      .pl-suggest button:focus-visible { background: var(--surface); }
+
+      .pl-suggest small {
+        display: block;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .pl-timerow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 12px 0;
+      }
+
+      .pl-timerow label {
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 9.5px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .pl-timerow input {
+        height: 34px;
+        padding: 0 10px;
+        border: 1px solid var(--edge);
+        border-radius: 8px;
+        background: var(--bg-deep);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 13px;
+        color-scheme: dark;
+      }
+
+      .pl-timerow button {
+        height: 34px;
+        padding: 0 12px;
+        border: 1px solid var(--edge);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .pl-timerow button:hover { color: var(--text); border-color: var(--mut); }
+
+      .pl-go {
+        width: 100%;
+        height: 42px;
+        margin-bottom: 8px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--good);
+        color: var(--good-ink);
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: filter 0.15s ease;
+      }
+
+      .pl-go:hover { filter: brightness(1.1); }
+      .pl-go:active { transform: translateY(1px); }
+
+      .pl-go:disabled {
+        background: var(--surface-2);
+        color: var(--mut);
+        cursor: not-allowed;
+      }
+
+      .pl-hint {
+        margin: 0 0 14px;
+        color: var(--mut);
+        font-size: 13.5px;
+        font-style: italic;
+        text-wrap: pretty;
+      }
+
+      .pl-status {
+        margin: 8px 0;
+        color: var(--mut);
+        font-size: 14px;
+        font-style: italic;
+      }
+
+      .pl-itin {
+        display: block;
+        width: 100%;
+        margin-bottom: 8px;
+        padding: 12px;
+        border: 1px solid var(--rule);
+        border-radius: 11px;
+        background: var(--surface);
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+
+      .pl-itin:hover { background: var(--surface-2); }
+
+      .pl-itin.active {
+        border-color: var(--good);
+        background: var(--surface-2);
+      }
+
+      .pl-itin-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+      }
+
+      .pl-itin-head strong {
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .pl-itin-head span {
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .pl-chips {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 5px;
+        margin: 8px 0 6px;
+      }
+
+      .pl-chip {
+        display: inline-grid;
+        place-items: center;
+        min-width: 30px;
+        height: 22px;
+        padding: 0 6px;
+        border: 1px solid;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.25);
+        font-family: var(--mono);
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+
+      .pl-chips .walk {
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10.5px;
+      }
+
+      .pl-rel {
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.02em;
+      }
+
+      .pl-rel strong { font-weight: 600; }
+
+      .pl-steps {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px dotted var(--rule-strong);
+        display: grid;
+        gap: 7px;
+      }
+
+      .pl-step {
+        display: grid;
+        grid-template-columns: 52px minmax(0, 1fr);
+        gap: 10px;
+        font-size: 13.5px;
+      }
+
+      .pl-step em {
+        font-style: normal;
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--mut);
+        white-space: nowrap;
+      }
+
+      .pl-step strong { font-weight: 600; }
+
+      .pl-step small { display: block; color: var(--mut); font-size: 12px; }
+
+      .pl-xfer {
+        padding: 5px 9px;
+        border-radius: 7px;
+        background: var(--bg-deep);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .pl-foot {
+        margin-top: 10px;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.04em;
+      }
+
+      /* map overlay */
+      .pl-pin-ring {
+        fill: var(--bg-deep);
+        stroke-width: 2.5;
+      }
+
+      .pl-pin-label {
+        fill: var(--text);
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 600;
+        text-anchor: middle;
+        pointer-events: none;
+      }
+
+      .pl-leg-casing {
+        fill: none;
+        stroke: var(--bg-deep);
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .pl-leg {
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .pl-walkleg {
+        fill: none;
+        stroke: var(--mut);
+        stroke-dasharray: 3 6;
+        stroke-linecap: round;
+      }
+
+      .pl-legstop {
+        fill: var(--bg-deep);
+        stroke-width: 1.8;
+        pointer-events: none;
+      }
+
+      .at-railstats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        background: var(--rule);
+        border-bottom: 1px solid var(--rule);
+      }
+
+      .at-railstats article {
+        padding: 10px 12px;
+        background: var(--surface);
+      }
+
+      .at-railstats span {
+        display: block;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .at-railstats strong {
+        display: block;
+        margin-top: 4px;
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .at-rail-head {
+        display: grid;
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--rule);
+      }
+
+      .at-rail-head input {
+        width: 100%;
+        height: 38px;
+        padding: 0 12px;
+        border: 1px solid var(--edge);
+        border-radius: 10px;
+        background: var(--bg-deep);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .at-rail-head input::placeholder { color: var(--mut); }
+
+      .at-modes { display: flex; gap: 18px; padding: 0 2px; }
+
+      .at-modes button {
+        padding: 6px 0;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .at-modes button:hover { color: var(--text); }
+
+      .at-modes button[aria-pressed="true"] {
+        color: var(--text);
+        border-bottom-color: var(--good);
+      }
+
+      .at-list {
+        min-height: 0;
+        overflow-y: auto;
+        padding: 8px;
+      }
+
+      .at-item {
+        display: grid;
+        grid-template-columns: 44px 1fr auto;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        margin-bottom: 2px;
+        padding: 8px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+      }
+
+      .at-item:hover { background: var(--surface-2); }
+
+      .at-item.active {
+        background: var(--surface-2);
+        border-color: var(--rule-strong);
+      }
+
+      /* when a route is open, quiet the rest of the rail like the map does */
+      .at-list.has-sel .at-item:not(.active) { opacity: 0.55; }
+
+      .at-list.has-sel .at-item:not(.active):hover,
+      .at-list.has-sel .at-item:not(.active):focus-visible { opacity: 1; }
+
+      .at-chip {
+        display: grid;
+        place-items: center;
+        min-width: 40px;
+        height: 28px;
+        border: 1px solid;
+        border-radius: 7px;
+        font-family: var(--mono);
+        font-size: 13.5px;
+        font-weight: 600;
+        background: rgba(0, 0, 0, 0.25);
+      }
+
+      .at-item-name { min-width: 0; }
+
+      .at-item-name strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 15px;
+        font-weight: 500;
+      }
+
+      .at-item-name span {
+        display: block;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.02em;
+      }
+
+      .at-item-rate {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      /* detail card; visibility keeps the closed card out of the tab order */
+      .at-detail {
+        left: 16px;
+        width: 352px;
+        transform: translateX(-16px);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.28s ease, visibility 0s linear 0.28s;
+      }
+
+      .at-detail.open {
+        transform: none;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transition-delay: 0s;
+      }
+
+      .at-detail-scroll {
+        min-height: 0;
+        overflow-y: auto;
+        padding: 18px 16px 20px;
+      }
+
+      .at-detail-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .at-badge {
+        display: grid;
+        place-items: center;
+        min-width: 54px;
+        height: 44px;
+        border: 1.5px solid;
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.25);
+        font-family: var(--mono);
+        font-size: 19px;
+        font-weight: 600;
+      }
+
+      .at-detail-head h2 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 500;
+        letter-spacing: 0.005em;
+        line-height: 1.08;
+        outline: none;
+      }
+
+      .at-detail-head p {
+        margin: 0 0 1px;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 9.5px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .at-close {
+        flex: none;
+        margin-left: auto;
+        width: 36px;
+        height: 36px;
+        border: 1px solid var(--edge);
+        border-radius: 7px;
+        background: transparent;
+        color: var(--mut);
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .at-close:hover { color: var(--text); border-color: var(--mut); }
+
+      .at-metricrow {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        background: var(--rule);
+        overflow: hidden;
+        margin-bottom: 18px;
+      }
+
+      .at-metricrow article {
+        padding: 10px 12px;
+        background: var(--surface);
+      }
+
+      .at-metricrow span {
+        display: block;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .at-metricrow strong {
+        display: block;
+        margin-top: 4px;
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .at-section { margin-bottom: 18px; }
+
+      .at-section h3 {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin: 0 0 8px;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .at-section h3 small {
+        font-size: 10px;
+        font-weight: 400;
+        letter-spacing: 0.06em;
+        text-transform: none;
+      }
+
+      .at-live {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        background: var(--surface);
+        font-size: 15px;
+      }
+
+      .at-live-dot {
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--good);
+        animation: pulse 2.2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(67, 217, 163, 0.45); }
+        70% { box-shadow: 0 0 0 7px rgba(67, 217, 163, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(67, 217, 163, 0); }
+      }
+
+      .at-hours {
+        display: grid;
+        grid-template-columns: repeat(24, 1fr);
+        align-items: end;
+        gap: 2px;
+        height: 96px;
+        padding: 10px 10px 18px;
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+
+      .at-hours i {
+        position: relative;
+        display: block;
+        min-height: 2px;
+        border-radius: 2px 2px 0 0;
+        opacity: 0.9;
+      }
+
+      .at-hours i span {
+        position: absolute;
+        left: 50%;
+        bottom: -16px;
+        transform: translateX(-50%);
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 9px;
+      }
+
+      /* hours with no scheduled service: neutral tick, not a 0% bar */
+      .at-hours i.no-svc,
+      .ld-hours i.no-svc {
+        height: 2px;
+        background: var(--rule-strong);
+        opacity: 0.7;
+        border-radius: 99px;
+      }
+
+      .at-rows {
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        background: var(--surface);
+        overflow: hidden;
+      }
+
+      .at-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 58px;
+        gap: 10px;
+        align-items: center;
+        width: 100%;
+        padding: 8px 12px;
+        border: 0;
+        border-bottom: 1px dotted var(--rule-strong);
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+      }
+
+      .at-row:last-child { border-bottom: 0; }
+
+      button.at-row { cursor: pointer; transition: background 0.15s ease; }
+      button.at-row:hover { background: var(--surface-2); }
+
+      .at-row strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .at-row span {
+        display: block;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .at-row em {
+        font-style: normal;
+        font-family: var(--mono);
+        font-size: 13.5px;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      /* map furniture */
+      .at-legend {
+        position: absolute;
+        z-index: 8;
+        left: 16px;
+        bottom: 16px;
+        display: flex;
+        gap: 14px;
+        padding: 8px 12px;
+        border: 1px solid var(--rule-strong);
+        border-radius: 10px;
+        background: rgba(20, 23, 28, 0.92);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(10px);
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.04em;
+      }
+
+      .at-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+      .at-legend i { width: 14px; height: 4px; border-radius: 99px; }
+
+      .at-tools {
+        position: absolute;
+        z-index: 8;
+        right: calc(var(--rail-w) + 32px);
+        bottom: 16px;
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid var(--rule-strong);
+        border-radius: 10px;
+        background: rgba(20, 23, 28, 0.92);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(10px);
+      }
+
+      .at-tools button {
+        min-width: 36px;
+        height: 36px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 13.5px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+
+      .at-tools button:hover { background: var(--surface-2); }
+
+      .at-list::-webkit-scrollbar,
+      .at-detail-scroll::-webkit-scrollbar { width: 9px; }
+
+      .at-list::-webkit-scrollbar-thumb,
+      .at-detail-scroll::-webkit-scrollbar-thumb {
+        background: var(--rule-strong);
+        border: 3px solid var(--surface);
+        border-radius: 99px;
+      }
+
+      /* ============================================================
+         REPORT VIEW — the editorial field report
+         ============================================================ */
+      .ledger {
+        padding-top: 60px;
+        font-size: 17px;
+        line-height: 1.6;
+      }
+
+      .ld-wrap {
+        max-width: 1020px;
+        margin: 0 auto;
+        padding: 0 28px 120px;
+      }
+
+      .ld-reveal {
+        opacity: 0;
+        transform: translateY(18px);
+        transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+      }
+
+      .ld-reveal.in { opacity: 1; transform: none; }
+
+      .ld-masthead {
+        padding: 40px 0 16px;
+        border-bottom: 3px double var(--rule-strong);
+        text-align: center;
+      }
+
+      .ld-masthead > span {
+        display: block;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+
+      .ld-masthead h2 {
+        margin: 10px 0 8px;
+        font-size: clamp(34px, 5.4vw, 56px);
+        font-weight: 500;
+        font-optical-sizing: auto;
+        letter-spacing: -0.01em;
+        line-height: 1.05;
+        text-wrap: balance;
+      }
+
+      .ld-masthead h2 em { font-style: italic; font-weight: 400; }
+
+      .ld-hero {
+        padding: 64px 0 48px;
+        border-bottom: 1px solid var(--rule);
+        text-align: center;
+      }
+
+      .ld-kicker {
+        margin: 0 auto;
+        max-width: 560px;
+        color: var(--mut);
+        font-size: 17px;
+        font-style: italic;
+        text-wrap: pretty;
+      }
+
+      .ld-big {
+        margin: 8px 0 2px;
+        font-size: clamp(96px, 17vw, 188px);
+        font-weight: 300;
+        font-optical-sizing: auto;
+        letter-spacing: -0.04em;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .ld-big sup {
+        font-size: 0.32em;
+        font-weight: 400;
+        vertical-align: 1.5em;
+        color: var(--mut);
+      }
+
+      .ld-deck {
+        margin: 0 auto;
+        max-width: 620px;
+        font-size: 20px;
+        text-wrap: balance;
+      }
+
+      .ld-herostats {
+        display: flex;
+        justify-content: center;
+        gap: 48px;
+        margin-top: 40px;
+      }
+
+      .ld-herostats div { text-align: center; }
+
+      .ld-herostats strong {
+        display: block;
+        font-family: var(--mono);
+        font-size: 22px;
+        font-weight: 500;
+      }
+
+      .ld-herostats span {
+        display: block;
+        margin-top: 2px;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .ld-section { padding: 56px 0 8px; }
+
+      .ld-label {
+        display: block;
+        margin-bottom: 14px;
+        color: var(--good);
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+
+      .ld-section h2 {
+        margin: 0 0 10px;
+        font-size: clamp(28px, 3.6vw, 40px);
+        font-weight: 500;
+        letter-spacing: -0.01em;
+        line-height: 1.12;
+        text-wrap: balance;
+      }
+
+      .ld-section .ld-sub {
+        margin: 0 0 30px;
+        max-width: 640px;
+        color: var(--mut);
+        font-size: 17px;
+        text-wrap: pretty;
+      }
+
+      .ld-caption {
+        margin: 12px 0 0;
+        color: var(--mut);
+        font-size: 13.5px;
+        font-style: italic;
+      }
+
+      /* field notes */
+      .ld-note {
+        padding: 24px 0;
+        border-bottom: 1px solid var(--rule);
+      }
+
+      .ld-note:last-of-type { border-bottom: 0; }
+
+      .ld-note h3 {
+        margin: 0 0 8px;
+        font-size: 24px;
+        font-weight: 500;
+        font-style: italic;
+        letter-spacing: -0.005em;
+      }
+
+      .ld-note p {
+        margin: 0 0 10px;
+        max-width: 720px;
+        text-wrap: pretty;
+      }
+
+      .ld-note p strong {
+        font-weight: 600;
+        font-family: var(--mono);
+        font-size: 0.88em;
+      }
+
+      .ld-note-edit {
+        max-width: 720px;
+        padding: 12px 16px;
+        border: 1px dashed var(--rule-strong);
+        border-radius: 9px;
+        color: var(--mut);
+        font-style: italic;
+        font-size: 15px;
+      }
+
+      .ld-note-edit code {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-style: normal;
+      }
+
+      /* trend chart */
+      .ld-trendbox { position: relative; }
+
+      .ld-trend { display: block; width: 100%; height: auto; }
+
+      .ld-tip {
+        position: absolute;
+        display: none;
+        padding: 6px 10px;
+        border: 1px solid var(--rule-strong);
+        border-radius: 7px;
+        background: var(--surface-2);
+        font-family: var(--mono);
+        font-size: 12px;
+        white-space: nowrap;
+        pointer-events: none;
+        transform: translate(-50%, -130%);
+      }
+
+      /* live */
+      .ld-livehead { display: flex; align-items: baseline; gap: 12px; }
+
+      .ld-livedot {
+        flex: none;
+        align-self: center;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--good);
+        animation: pulse 2.2s ease-in-out infinite;
+      }
+
+      .ld-livetime {
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .ld-arrivals {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 12px;
+        margin-top: 22px;
+      }
+
+      .ld-arrival {
+        padding: 14px 16px;
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+
+      .ld-arrival strong { display: block; font-size: 17px; font-weight: 600; }
+
+      .ld-arrival span { display: block; color: var(--mut); font-size: 13.5px; }
+
+      .ld-arrival em {
+        display: block;
+        margin-top: 6px;
+        font-style: normal;
+        font-family: var(--mono);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      /* league table */
+      .ld-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 6px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--rule-strong);
+      }
+
+      .ld-filters { display: flex; gap: 18px; }
+
+      .ld-filters button {
+        padding: 6px 0;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .ld-filters button:hover { color: var(--text); }
+
+      .ld-filters button[aria-pressed="true"] {
+        color: var(--text);
+        border-bottom-color: var(--good);
+      }
+
+      .ld-sort {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .ld-sort select {
+        padding: 5px 8px;
+        border: 1px solid var(--edge);
+        border-radius: 7px;
+        background: var(--surface);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+        transition: border-color 0.15s ease;
+      }
+
+      .ld-sort select:hover { border-color: var(--mut); }
+
+      .ld-cols {
+        display: grid;
+        grid-template-columns: 34px 52px minmax(110px, 0.6fr) minmax(0, 1.4fr) 72px 76px 20px;
+        gap: 14px;
+        padding: 12px 10px 8px;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .ld-cols :nth-child(5),
+      .ld-cols :nth-child(6) { text-align: right; }
+
+      .ld-row { border-bottom: 1px solid var(--rule); }
+
+      .ld-rowbtn {
+        display: grid;
+        grid-template-columns: 34px 52px minmax(110px, 0.6fr) minmax(0, 1.4fr) 72px 76px 20px;
+        gap: 14px;
+        align-items: center;
+        width: 100%;
+        padding: 11px 10px;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+
+      .ld-rowbtn:hover,
+      .ld-rowbtn[aria-expanded="true"] { background: var(--surface); }
+
+      .ld-rank {
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .ld-chip {
+        display: grid;
+        place-items: center;
+        height: 28px;
+        border: 1px solid var(--rule-strong);
+        border-radius: 7px;
+        font-family: var(--mono);
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      .ld-rname {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 17px;
+        font-weight: 500;
+      }
+
+      .ld-barwrap {
+        height: 8px;
+        border-radius: 99px;
+        background: var(--surface-2);
+        overflow: hidden;
+      }
+
+      .ld-barwrap i {
+        display: block;
+        height: 100%;
+        border-radius: 99px;
+        transition: width 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+      }
+
+      .ld-rate,
+      .ld-p90 {
+        font-family: var(--mono);
+        font-size: 13.5px;
+        font-weight: 500;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .ld-p90 { color: var(--mut); }
+
+      .ld-caret {
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 12px;
+        text-align: center;
+        transition: transform 0.25s ease;
+      }
+
+      .ld-rowbtn[aria-expanded="true"] .ld-caret { transform: rotate(180deg); }
+
+      .ld-drill {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+      }
+
+      .ld-drill.open { grid-template-rows: 1fr; }
+
+      .ld-drill > div { overflow: hidden; }
+
+      .ld-drillgrid {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 24px 32px;
+        padding: 10px 10px 24px;
+      }
+
+      @media (max-width: 760px) {
+        .ld-drillgrid { grid-template-columns: 1fr; }
+      }
+
+      .ld-drillgrid h3 {
+        margin: 0 0 10px;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .ld-hours {
+        display: grid;
+        grid-template-columns: repeat(24, 1fr);
+        align-items: end;
+        gap: 2px;
+        height: 110px;
+        padding-bottom: 18px;
+        position: relative;
+      }
+
+      .ld-hours i {
+        position: relative;
+        min-height: 2px;
+        border-radius: 2px 2px 0 0;
+        opacity: 0.9;
+      }
+
+      .ld-hours i span {
+        position: absolute;
+        left: 50%;
+        bottom: -16px;
+        transform: translateX(-50%);
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 9px;
+      }
+
+      .ld-statstrip {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px dotted var(--rule-strong);
+      }
+
+      .ld-statstrip strong {
+        display: block;
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .ld-statstrip span {
+        display: block;
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .ld-minilist { display: grid; gap: 0; }
+
+      .ld-minirow {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: baseline;
+        padding: 8px 0;
+        border-bottom: 1px dotted var(--rule-strong);
+        font-size: 15px;
+      }
+
+      .ld-minirow:last-child { border-bottom: 0; }
+
+      .ld-minirow span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--text);
+      }
+
+      .ld-minirow small {
+        display: block;
+        color: var(--mut);
+        font-size: 13.5px;
+      }
+
+      .ld-minirow em {
+        font-style: normal;
+        font-family: var(--mono);
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      .ld-mutetext { color: var(--mut); font-size: 15px; font-style: italic; }
+
+      /* transfers */
+      .ld-translist {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: transfer;
+      }
+
+      .ld-translist li {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: center;
+        padding: 16px 4px;
+        border-bottom: 1px solid var(--rule);
+      }
+
+      .ld-translist li::before {
+        counter-increment: transfer;
+        content: counter(transfer, decimal-leading-zero);
+        color: var(--mut);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .ld-translist strong { display: block; font-size: 17px; font-weight: 500; }
+
+      .ld-translist small {
+        display: block;
+        color: var(--mut);
+        font-size: 13.5px;
+      }
+
+      .ld-transrate {
+        font-family: var(--mono);
+        font-size: 20px;
+        font-weight: 500;
+        text-align: right;
+      }
+
+      .ld-transrate small {
+        display: block;
+        color: var(--mut);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .ld-colophon {
+        margin-top: 72px;
+        padding-top: 24px;
+        border-top: 3px double var(--rule-strong);
+        color: var(--mut);
+        font-size: 14px;
+        text-align: center;
+        font-style: italic;
+        text-wrap: pretty;
+      }
+
+      .load-error {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--text);
+        text-align: center;
+      }
+
+      .load-error code {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 8px 14px;
+        border-radius: 8px;
+        background: var(--surface-2);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+    </style>
   </head>
-  <body>
-    <main class="app-shell">
-      <aside class="sidebar" aria-label="Route controls">
-        <header class="brand">
-          <div>
-            <p class="eyebrow">Grand River Transit</p>
-            <h1>Reliability</h1>
-          </div>
-          <div class="date-range" id="dateRange">Loading</div>
-        </header>
+  <body data-view="atlas">
+    <header class="bar">
+      <div class="bar-brand">
+        <span>Grand River Transit</span>
+        <h1>The <em>Reliability</em> Atlas</h1>
+      </div>
+      <nav class="bar-nav" aria-label="Site sections">
+        <button type="button" data-view="atlas" aria-current="page">Atlas</button>
+        <button type="button" data-view="planner">Planner</button>
+        <button type="button" data-view="report">Field Report</button>
+      </nav>
+      <span class="bar-dates" id="barDates">Loading…</span>
+    </header>
 
-        <section class="metrics-grid" aria-label="System summary">
-          <article>
-            <span>On-time</span>
-            <strong id="systemOnTime">--</strong>
-          </article>
-          <article>
-            <span>Median</span>
-            <strong id="systemMedian">--</strong>
-          </article>
-          <article>
-            <span>P90</span>
-            <strong id="systemP90">--</strong>
-          </article>
-          <article>
-            <span>Routes</span>
-            <strong id="systemRoutes">--</strong>
-          </article>
-        </section>
+    <!-- ======================= ATLAS VIEW ======================= -->
+    <div class="atlas" id="atlasRoot" role="main">
+      <svg class="at-map" id="atMap" role="group" tabindex="0" aria-label="GRT network reliability map, colored by on-time rate. Arrow keys pan, plus and minus zoom. Tab moves through the routes on the map."></svg>
 
-        <section class="controls" aria-label="Filters">
-          <label class="search">
-            <span>Search routes</span>
-            <input id="routeSearch" type="search" placeholder="Route, mode, reliability">
-          </label>
-          <div class="segmented" role="group" aria-label="Mode filter">
-            <button class="active" data-mode="all" type="button">All</button>
-            <button data-mode="bus" type="button">Bus</button>
-            <button data-mode="lrt" type="button">LRT</button>
-          </div>
-          <label class="select-label">
-            <span>Sort by</span>
-            <select id="sortRoutes">
-              <option value="on_time_asc">Lowest on-time</option>
-              <option value="on_time_desc">Highest on-time</option>
-              <option value="p90_desc">Highest P90 delay</option>
-              <option value="observations_desc">Most observations</option>
-              <option value="route_asc">Route number</option>
-            </select>
-          </label>
-        </section>
+      <div class="at-legend" role="group" aria-label="Reliability color scale">
+        <span><i style="background:var(--good)"></i> 95%+</span>
+        <span><i style="background:var(--ok)"></i> 90–95</span>
+        <span><i style="background:var(--watch)"></i> 85–90</span>
+        <span><i style="background:var(--poor)"></i> &lt;85</span>
+      </div>
 
-        <section class="route-list-wrap" aria-label="Routes">
-          <div class="list-heading">
-            <span>Lines</span>
-            <span id="routeCount">0</span>
-          </div>
-          <div class="route-list" id="routeList"></div>
-        </section>
-      </aside>
+      <div class="at-tools" role="group" aria-label="Map controls">
+        <button id="atZoomOut" type="button" aria-label="Zoom out">−</button>
+        <button id="atZoomReset" type="button" aria-label="Reset view">⌖</button>
+        <button id="atZoomIn" type="button" aria-label="Zoom in">+</button>
+      </div>
 
-      <section class="map-stage" aria-label="Route map">
-        <div class="map-toolbar">
-          <div class="selected-summary">
-            <span id="selectedMode">System</span>
-            <strong id="selectedTitle">All lines</strong>
-          </div>
-          <div class="map-actions" aria-label="Map zoom controls">
-            <button id="zoomOut" type="button" title="Zoom out" aria-label="Zoom out">−</button>
-            <button id="zoomReset" type="button" title="Reset map" aria-label="Reset map">⌂</button>
-            <button id="zoomIn" type="button" title="Zoom in" aria-label="Zoom in">+</button>
-          </div>
-          <div class="legend" aria-label="Reliability color scale">
-            <span><i class="good"></i> 95%+</span>
-            <span><i class="ok"></i> 90-95%</span>
-            <span><i class="watch"></i> 85-90%</span>
-            <span><i class="poor"></i> Under 85%</span>
+      <aside class="at-rail" aria-label="Route list">
+        <div class="at-railstats" role="group" aria-label="System summary">
+          <article><span>On-time</span><strong id="atOnTime">--</strong></article>
+          <article><span>Median</span><strong id="atMedian">--</strong></article>
+          <article><span>P90</span><strong id="atP90">--</strong></article>
+          <article><span>Routes</span><strong id="atRoutes">--</strong></article>
+        </div>
+        <div class="at-rail-head">
+          <input id="atSearch" type="search" placeholder="Search routes" aria-label="Search routes">
+          <span class="sr-only" id="atCount" aria-live="polite"></span>
+          <div class="at-modes" role="group" aria-label="Mode filter">
+            <button type="button" data-mode="all" aria-pressed="true">All</button>
+            <button type="button" data-mode="bus" aria-pressed="false">Bus</button>
+            <button type="button" data-mode="lrt" aria-pressed="false">LRT</button>
           </div>
         </div>
-        <svg id="networkMap" class="network-map" role="img" aria-label="GRT route reliability map"></svg>
-      </section>
-
-      <aside class="detail-panel" aria-label="Selected route details">
-        <section class="route-hero">
-          <div class="route-badge" id="routeBadge">--</div>
-          <div>
-            <p id="routeMode">Select a line</p>
-            <h2 id="routeTitle">System overview</h2>
-          </div>
-        </section>
-
-        <section class="detail-metrics">
-          <article>
-            <span>On-time</span>
-            <strong id="routeOnTime">--</strong>
-          </article>
-          <article>
-            <span>Late</span>
-            <strong id="routeLate">--</strong>
-          </article>
-          <article>
-            <span>Median</span>
-            <strong id="routeMedian">--</strong>
-          </article>
-          <article>
-            <span>P90</span>
-            <strong id="routeP90">--</strong>
-          </article>
-        </section>
-
-        <section class="live-section" id="liveSection" hidden>
-          <div class="section-title">
-            <h3><span class="live-dot" aria-hidden="true"></span>Live</h3>
-            <span id="liveUpdated">--</span>
-          </div>
-          <div class="live-summary" id="liveSummary"></div>
-          <div class="live-arrivals" id="liveArrivals"></div>
-        </section>
-
-        <section>
-          <div class="section-title">
-            <h3>Line Profile</h3>
-            <span>On-time by hour</span>
-          </div>
-          <div class="hour-chart" id="hourChart"></div>
-        </section>
-
-        <section id="transferSection" hidden>
-          <div class="section-title">
-            <h3>Transfers</h3>
-            <span id="transferSubtitle">Riskiest connections</span>
-          </div>
-          <div class="transfer-table" id="transferTable"></div>
-        </section>
-
-        <section>
-          <div class="section-title">
-            <h3>Stations / Stops</h3>
-            <span id="stopCount">0 stops</span>
-          </div>
-          <div class="stop-table" id="stopTable"></div>
-        </section>
+        <div class="at-list" id="atList"></div>
       </aside>
-    </main>
 
-    <script src="app.js"></script>
+      <aside class="at-detail" id="atDetail" aria-label="Route details" aria-hidden="true"></aside>
+
+      <aside class="at-planner" id="plannerPanel" aria-label="Trip planner">
+        <div class="pl-scroll">
+          <header class="pl-head">
+            <p>Reliability-aware</p>
+            <h2>Plan a trip</h2>
+          </header>
+
+          <div class="pl-field">
+            <label for="plFrom">From</label>
+            <div class="pl-field-row">
+              <input id="plFrom" type="text" placeholder="Search a stop, or click the map" autocomplete="off">
+              <button class="pl-clear" id="plFromClear" type="button" aria-label="Clear origin">✕</button>
+            </div>
+            <div class="pl-suggest" id="plFromSuggest" hidden></div>
+          </div>
+
+          <div class="pl-field">
+            <label for="plTo">To</label>
+            <div class="pl-field-row">
+              <input id="plTo" type="text" placeholder="Search a stop, or click the map" autocomplete="off">
+              <button class="pl-clear" id="plToClear" type="button" aria-label="Clear destination">✕</button>
+            </div>
+            <div class="pl-suggest" id="plToSuggest" hidden></div>
+          </div>
+
+          <div class="pl-timerow">
+            <label for="plTime">Leave at</label>
+            <input id="plTime" type="time">
+            <button id="plNow" type="button">Now</button>
+          </div>
+
+          <button class="pl-go" id="plGo" type="button" disabled>Plan trip</button>
+          <p class="pl-hint" id="plHint">Click the map to drop your origin pin, then click again for the destination.</p>
+
+          <div id="plResults" aria-live="polite"></div>
+          <p class="pl-foot" id="plFoot"></p>
+        </div>
+      </aside>
+    </div>
+
+    <!-- ======================= REPORT VIEW ======================= -->
+    <div class="ledger" id="reportRoot" role="main" hidden>
+      <div class="ld-wrap">
+        <header class="ld-masthead">
+          <span>Grand River Transit · Waterloo Region</span>
+          <h2>The <em>Field</em> Report</h2>
+          <span id="ldDates">—</span>
+        </header>
+
+        <section class="ld-hero ld-reveal" aria-label="Headline statistic">
+          <p class="ld-kicker" id="ldKicker">Loading the numbers…</p>
+          <div class="ld-big"><span id="ldBig">0.0</span><sup>%</sup></div>
+          <p class="ld-deck" id="ldDeck"></p>
+          <div class="ld-herostats" id="ldHeroStats"></div>
+        </section>
+
+        <!-- FIELD-NOTES: the <span data-fact="…"> values are filled from the data
+             automatically. Write your own analysis in the .ld-note-edit paragraphs
+             (replace the placeholder entirely, including the dashed style if you like). -->
+        <section class="ld-section ld-reveal" aria-label="Field notes">
+          <span class="ld-label">Field notes</span>
+          <h2>What the data keeps saying</h2>
+          <p class="ld-sub">Observations from the collection so far. The figures update with the data; the commentary is the author's.</p>
+
+          <article class="ld-note">
+            <h3>The afternoon slump</h3>
+            <p>System reliability bottoms out at <strong><span data-fact="worstHour"></span></strong>, when
+              <strong><span data-fact="worstHourRate"></span></strong> of arrivals run on time — compared with
+              <strong><span data-fact="bestHourRate"></span></strong> at <strong><span data-fact="bestHour"></span></strong>.</p>
+            <p class="ld-note-edit">Your commentary goes here — edit this paragraph in <code>index.html</code> (search for <code>FIELD-NOTES</code>).</p>
+          </article>
+
+          <article class="ld-note">
+            <h3>The hardest line</h3>
+            <p><strong><span data-fact="worstRouteName"></span></strong> is the system's least reliable line:
+              <strong><span data-fact="worstRouteRate"></span></strong> on-time across
+              <strong><span data-fact="worstRouteObs"></span></strong> observed arrivals, with the worst tenth of them
+              running <strong><span data-fact="worstRouteP90"></span></strong> or more behind schedule.</p>
+            <p class="ld-note-edit">Your commentary goes here.</p>
+          </article>
+
+          <article class="ld-note">
+            <h3>A transfer to avoid</h3>
+            <p>The riskiest frequently-attempted connection is <strong><span data-fact="transferPair"></span></strong> at
+              <strong><span data-fact="transferStop"></span></strong>: with only
+              <strong><span data-fact="transferWait"></span></strong> of scheduled slack, riders make it just
+              <strong><span data-fact="transferRate"></span></strong> of the time.</p>
+            <p class="ld-note-edit">Your commentary goes here.</p>
+          </article>
+        </section>
+
+        <section class="ld-section ld-reveal" aria-label="Daily trend">
+          <span class="ld-label">Day by day</span>
+          <h2>A steady system, with rough edges</h2>
+          <p class="ld-sub" id="ldTrendSub"></p>
+          <div class="ld-trendbox">
+            <svg class="ld-trend" id="ldTrend" role="img" aria-label="Daily on-time rate"></svg>
+            <div class="ld-tip" id="ldTip"></div>
+          </div>
+          <p class="ld-caption">Share of observed arrivals on time, by service day. Weekends shaded.</p>
+        </section>
+
+        <section class="ld-section ld-reveal" id="ldLive" hidden aria-label="Live conditions">
+          <span class="ld-label">Right now</span>
+          <div class="ld-livehead">
+            <span class="ld-livedot" aria-hidden="true"></span>
+            <h2 id="ldLiveHead">On the road</h2>
+            <span class="ld-livetime" id="ldLiveTime"></span>
+          </div>
+          <p class="ld-sub" id="ldLiveSub"></p>
+          <div class="ld-arrivals" id="ldArrivals"></div>
+        </section>
+
+        <section class="ld-section ld-reveal" aria-label="Route rankings">
+          <span class="ld-label">The league table</span>
+          <h2>Every route, ranked</h2>
+          <p class="ld-sub">Click a route to open its hourly profile, slowest stops, and riskiest onward connections.</p>
+          <div class="ld-controls">
+            <div class="ld-filters" role="group" aria-label="Mode filter">
+              <button type="button" data-mode="all" aria-pressed="true">All modes</button>
+              <button type="button" data-mode="bus" aria-pressed="false">Bus</button>
+              <button type="button" data-mode="lrt" aria-pressed="false">LRT</button>
+            </div>
+            <label class="ld-sort">Sort
+              <select id="ldSort">
+                <option value="worst">Least reliable first</option>
+                <option value="best">Most reliable first</option>
+                <option value="busiest">Busiest first</option>
+                <option value="number">Route number</option>
+              </select>
+            </label>
+          </div>
+          <div class="ld-cols" aria-hidden="true">
+            <span>#</span><span>Route</span><span>Line</span><span>On-time</span><span>Rate</span><span>P90</span><span></span>
+          </div>
+          <div id="ldTable"></div>
+        </section>
+
+        <section class="ld-section ld-reveal" aria-label="Riskiest transfers">
+          <span class="ld-label">Connections</span>
+          <h2>Where transfers go to die</h2>
+          <p class="ld-sub">The connections riders attempt most often, ranked by how rarely the second vehicle is actually catchable.</p>
+          <ol class="ld-translist" id="ldTransfers"></ol>
+        </section>
+
+        <footer class="ld-colophon" id="ldColophon"></footer>
+      </div>
+    </div>
+
+    <script src="planner.js"></script>
+    <script>
+      "use strict";
+
+      const SVG_NS = "http://www.w3.org/2000/svg";
+
+      /* SVG presentation attributes can't use var(); read the tokens once */
+      const TOKENS = (() => {
+        const style = getComputedStyle(document.documentElement);
+        const read = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+        return {
+          good: read("--good", "#43d9a3"),
+          ok: read("--ok", "#5ba8e8"),
+          watch: read("--watch", "#e3a43c"),
+          poor: read("--poor", "#ff6478"),
+          rule: read("--rule", "#272c34"),
+          mut: read("--mut", "#8b919b"),
+          bg: read("--bg", "#0e1014"),
+        };
+      })();
+
+      function relColor(rate) {
+        if (rate >= 0.95) return "var(--good)";
+        if (rate >= 0.9) return "var(--ok)";
+        if (rate >= 0.85) return "var(--watch)";
+        return "var(--poor)";
+      }
+
+      function relHex(rate) {
+        if (rate >= 0.95) return TOKENS.good;
+        if (rate >= 0.9) return TOKENS.ok;
+        if (rate >= 0.85) return TOKENS.watch;
+        return TOKENS.poor;
+      }
+
+      const fmtPct = (v) => `${(Number(v || 0) * 100).toFixed(1)}%`;
+      const fmtInt = (v) => Number(v || 0).toLocaleString("en-US");
+
+      function fmtDelay(s) {
+        const v = Math.round(Number(s || 0));
+        if (Math.abs(v) < 90) return `${v} s`;
+        return `${(v / 60).toFixed(1)} min`;
+      }
+
+      function fmtSignedMin(s) {
+        const m = Math.round((Number(s || 0) / 60) * 10) / 10;
+        if (m === 0) return "on time";
+        return `${m > 0 ? "+" : ""}${m.toFixed(1)} min`;
+      }
+
+      function fmtHour(h) {
+        if (h === 0) return "midnight";
+        if (h === 12) return "noon";
+        return h < 12 ? `${h} a.m.` : `${h - 12} p.m.`;
+      }
+
+      function routeLabel(route) {
+        return route.route_short_name || route.route_id;
+      }
+
+      function routeName(route) {
+        return `${route.transit_mode === "lrt" ? "LRT" : "Bus"} ${routeLabel(route)}`;
+      }
+
+      function fmtDateLong(iso) {
+        return new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+      }
+
+      function reducedMotion() {
+        return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      }
+
+      function distanceSquared(aLat, aLon, bLat, bLon) {
+        const latScale = 111000;
+        const lonScale = Math.cos((aLat * Math.PI) / 180) * 111000;
+        const dy = (aLat - bLat) * latScale;
+        const dx = (aLon - bLon) * lonScale;
+        return dx * dx + dy * dy;
+      }
+
+      function stopsInLineOrder(data, routeKey) {
+        const shapes = data.routeShapes[routeKey] || [];
+        const shape = shapes.reduce((best, s) => (!best || s.points.length > best.points.length ? s : best), null);
+        const stops = data.routeStops[routeKey] || [];
+        if (!shape || shape.points.length < 2) return [...stops];
+
+        const cumulative = [0];
+        for (let i = 1; i < shape.points.length; i += 1) {
+          const [pLat, pLon] = shape.points[i - 1];
+          const [lat, lon] = shape.points[i];
+          cumulative.push(cumulative[i - 1] + Math.sqrt(distanceSquared(pLat, pLon, lat, lon)));
+        }
+
+        const progress = new Map();
+        for (const stop of stops) {
+          let bestD = Number.POSITIVE_INFINITY;
+          let bestP = 0;
+          for (let i = 0; i < shape.points.length; i += 1) {
+            const [lat, lon] = shape.points[i];
+            const d = distanceSquared(stop.stop_lat, stop.stop_lon, lat, lon);
+            if (d < bestD) { bestD = d; bestP = cumulative[i]; }
+          }
+          progress.set(`${stop.direction_id}:${stop.stop_id}`, bestP);
+        }
+
+        return [...stops].sort((a, b) => {
+          if (a.direction_id !== b.direction_id) return a.direction_id - b.direction_id;
+          const ap = progress.get(`${a.direction_id}:${a.stop_id}`) ?? 0;
+          const bp = progress.get(`${b.direction_id}:${b.stop_id}`) ?? 0;
+          return ap - bp;
+        });
+      }
+
+      function systemAggregates(data) {
+        const rows = data.systemByDate;
+        const obs = rows.reduce((sum, r) => sum + r.observations, 0);
+        const onTime = rows.reduce((sum, r) => sum + r.on_time_rate * r.observations, 0) / obs;
+        const median = rows[Math.floor(rows.length / 2)]?.median_delay_seconds || 0;
+        const p90 = rows.reduce((sum, r) => sum + r.p90_delay_seconds * r.observations, 0) / obs;
+        return { obs, onTime, median, p90 };
+      }
+
+      function systemByHour(data) {
+        const byHour = new Map();
+        for (const rows of Object.values(data.routeByHour)) {
+          for (const row of rows) {
+            const item = byHour.get(row.hour_of_day) || { observations: 0, weighted: 0 };
+            item.observations += row.observations;
+            item.weighted += row.on_time_rate * row.observations;
+            byHour.set(row.hour_of_day, item);
+          }
+        }
+        return Array.from({ length: 24 }, (_, hour) => {
+          const item = byHour.get(hour);
+          return {
+            hour_of_day: hour,
+            observations: item ? item.observations : 0,
+            on_time_rate: item ? item.weighted / item.observations : 0,
+          };
+        });
+      }
+
+      function hourSummary(rows) {
+        const seen = rows.filter((r) => r.observations > 0);
+        if (!seen.length) return "On-time rate by hour of day.";
+        const best = seen.reduce((a, b) => (b.on_time_rate > a.on_time_rate ? b : a));
+        const worst = seen.reduce((a, b) => (b.on_time_rate < a.on_time_rate ? b : a));
+        return `On-time rate by hour of day. Best around ${fmtHour(best.hour_of_day)} at ${fmtPct(best.on_time_rate)}; worst around ${fmtHour(worst.hour_of_day)} at ${fmtPct(worst.on_time_rate)}.`;
+      }
+
+      /* ================================================================
+         ATLAS VIEW
+         ================================================================ */
+      function atlasModule(data, liveRef, sys) {
+        const root = document.querySelector("#atlasRoot");
+        const svg = document.querySelector("#atMap");
+        const listEl = document.querySelector("#atList");
+        const detailEl = document.querySelector("#atDetail");
+        const searchEl = document.querySelector("#atSearch");
+
+        const state = {
+          selected: null,
+          mode: "all",
+          search: "",
+          map: { w: 0, h: 0, scale: 1, panX: 0, panY: 0, dragging: false, sx: 0, sy: 0, px: 0, py: 0, moved: false },
+        };
+
+        let overlayFn = null;
+        let mapClickFn = null;
+
+        document.querySelector("#atOnTime").textContent = fmtPct(sys.onTime);
+        document.querySelector("#atMedian").textContent = fmtDelay(sys.median);
+        document.querySelector("#atP90").textContent = fmtDelay(sys.p90);
+        document.querySelector("#atRoutes").textContent = data.routes.length;
+
+        /* flat screen coords -> zoomed/panned screen coords */
+        function transformPoint(bx, by) {
+          const cx = state.map.w / 2;
+          const cy = state.map.h / 2;
+          return [cx + (bx - cx) * state.map.scale + state.map.panX, cy + (by - cy) * state.map.scale + state.map.panY];
+        }
+
+        function inversePoint(px, py) {
+          const cx = state.map.w / 2;
+          const cy = state.map.h / 2;
+          return [cx + (px - state.map.panX - cx) / state.map.scale, cy + (py - state.map.panY - cy) / state.map.scale];
+        }
+
+        function project(lat, lon) {
+          const pad = 56;
+          const { minLat, maxLat, minLon, maxLon } = data.bounds;
+          const bx = pad + ((lon - minLon) / (maxLon - minLon)) * (state.map.w - pad * 2);
+          const by = pad + ((maxLat - lat) / (maxLat - minLat)) * (state.map.h - pad * 2);
+          return transformPoint(bx, by);
+        }
+
+        function screenToGeo(px, py) {
+          const pad = 56;
+          const { minLat, maxLat, minLon, maxLon } = data.bounds;
+          const [bx, by] = inversePoint(px, py);
+          return {
+            lon: minLon + ((bx - pad) / (state.map.w - pad * 2)) * (maxLon - minLon),
+            lat: maxLat - ((by - pad) / (state.map.h - pad * 2)) * (maxLat - minLat),
+          };
+        }
+
+        function drawGrid(layer) {
+          const step = 56;
+          /* invert the viewport corners to find the flat-plane range to cover */
+          const corners = [
+            inversePoint(0, 0),
+            inversePoint(state.map.w, 0),
+            inversePoint(0, state.map.h),
+            inversePoint(state.map.w, state.map.h),
+          ];
+          const minX = Math.floor(Math.min(...corners.map((c) => c[0])) / step) * step;
+          const maxX = Math.max(...corners.map((c) => c[0])) + step;
+          const minY = Math.floor(Math.min(...corners.map((c) => c[1])) / step) * step;
+          const maxY = Math.max(...corners.map((c) => c[1])) + step;
+          if ((maxX - minX) / step > 300 || (maxY - minY) / step > 300) return;
+
+          const addLine = (x1, y1, x2, y2) => {
+            const line = document.createElementNS(SVG_NS, "line");
+            line.setAttribute("class", "at-grid");
+            line.setAttribute("x1", x1.toFixed(1));
+            line.setAttribute("y1", y1.toFixed(1));
+            line.setAttribute("x2", x2.toFixed(1));
+            line.setAttribute("y2", y2.toFixed(1));
+            layer.append(line);
+          };
+
+          for (let x = minX; x <= maxX; x += step) {
+            const [x1, y1] = transformPoint(x, minY);
+            const [x2, y2] = transformPoint(x, maxY);
+            addLine(x1, y1, x2, y2);
+          }
+          for (let y = minY; y <= maxY; y += step) {
+            const [x1, y1] = transformPoint(minX, y);
+            const [x2, y2] = transformPoint(maxX, y);
+            addLine(x1, y1, x2, y2);
+          }
+        }
+
+        function pathFor(points) {
+          return points
+            .map(([lat, lon], i) => {
+              const [x, y] = project(lat, lon);
+              return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+            })
+            .join(" ");
+        }
+
+        function draw() {
+          const focusKey = document.activeElement?.getAttribute?.("data-line-key") || null;
+          const rect = svg.getBoundingClientRect();
+          state.map.w = Math.max(600, rect.width);
+          state.map.h = Math.max(420, rect.height);
+          svg.setAttribute("viewBox", `0 0 ${state.map.w} ${state.map.h}`);
+          svg.textContent = "";
+
+          const grid = document.createElementNS(SVG_NS, "g");
+          const back = document.createElementNS(SVG_NS, "g");
+          const front = document.createElementNS(SVG_NS, "g");
+          const dots = document.createElementNS(SVG_NS, "g");
+          svg.append(grid, back, front, dots);
+          drawGrid(grid);
+
+          for (const route of data.routes) {
+            const shapes = data.routeShapes[route.key] || [];
+            const isSel = route.key === state.selected;
+            const base = route.transit_mode === "lrt" ? 6 : isSel ? 4.6 : 2.4;
+            const width = base / Math.sqrt(state.map.scale);
+            const color = relHex(route.on_time_rate);
+
+            /* one focusable group per route: hover and keyboard act on the
+               whole line, and the wide hit paths make thin strokes clickable */
+            const g = document.createElementNS(SVG_NS, "g");
+            g.setAttribute("class", `at-line${state.selected ? (isSel ? " sel" : " dim") : ""}`);
+            g.setAttribute("data-line-key", route.key);
+            g.setAttribute("tabindex", "0");
+            g.setAttribute("role", "button");
+            g.setAttribute("aria-pressed", String(isSel));
+            g.setAttribute("aria-label", `${routeName(route)}, ${fmtPct(route.on_time_rate)} on-time`);
+            g.style.color = color;
+
+            const title = document.createElementNS(SVG_NS, "title");
+            title.textContent = `${routeName(route)} · ${fmtPct(route.on_time_rate)} on-time`;
+            g.append(title);
+
+            for (const shape of shapes) {
+              const d = pathFor(shape.points);
+
+              const path = document.createElementNS(SVG_NS, "path");
+              path.setAttribute("class", "at-route");
+              path.setAttribute("d", d);
+              path.setAttribute("stroke", color);
+              path.style.setProperty("--w", `${width.toFixed(2)}px`);
+              g.append(path);
+
+              const hit = document.createElementNS(SVG_NS, "path");
+              hit.setAttribute("class", "at-route-hit");
+              hit.setAttribute("d", d);
+              hit.setAttribute("stroke-width", Math.max(16, width + 12).toFixed(1));
+              g.append(hit);
+            }
+
+            g.addEventListener("click", () => {
+              if (!state.map.moved) select(route.key);
+            });
+            g.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                select(route.key);
+              }
+            });
+
+            (isSel ? front : back).append(g);
+          }
+
+          if (focusKey) {
+            svg.querySelector(`g[data-line-key="${focusKey}"]`)?.focus({ preventScroll: true });
+          }
+
+          /* selected route: show live vehicle positions when data is fresh */
+          const liveNow = freshLive();
+          const vehicles = state.selected && liveNow
+            ? (liveNow.vehicles || []).filter((v) => v.routeKey === state.selected)
+            : [];
+
+          for (const v of vehicles) {
+              const [x, y] = project(v.lat, v.lon);
+              const color = delayHex(v.predicted_delay_seconds);
+              const r = 6 / Math.sqrt(state.map.scale);
+
+              const halo = document.createElementNS(SVG_NS, "circle");
+              halo.setAttribute("class", "at-vehicle-halo");
+              halo.setAttribute("cx", x.toFixed(1));
+              halo.setAttribute("cy", y.toFixed(1));
+              halo.setAttribute("r", (r * 1.5).toFixed(2));
+              halo.setAttribute("stroke", color);
+              halo.style.setProperty("--vr", `${(r * 1.5).toFixed(2)}px`);
+
+              const dot = document.createElementNS(SVG_NS, "circle");
+              dot.setAttribute("class", "at-vehicle");
+              dot.setAttribute("cx", x.toFixed(1));
+              dot.setAttribute("cy", y.toFixed(1));
+              dot.setAttribute("r", r.toFixed(2));
+              dot.setAttribute("fill", color);
+              const title = document.createElementNS(SVG_NS, "title");
+              title.textContent =
+                `${v.transit_mode === "lrt" ? "LRT" : "Bus"} ${v.route_short_name}` +
+                `${v.trip_headsign ? ` → ${v.trip_headsign}` : ""}` +
+                ` · next: ${v.next_stop_name} in ${Math.max(0, Math.round(v.next_stop_eta_minutes))} min` +
+                ` · ${fmtSignedMin(v.predicted_delay_seconds)} predicted`;
+              dot.append(title);
+
+              dots.append(halo, dot);
+            }
+
+          if (overlayFn) {
+            const overlay = document.createElementNS(SVG_NS, "g");
+            svg.append(overlay);
+            overlayFn(overlay);
+          }
+        }
+
+        function setZoom(next, ax = state.map.w / 2, ay = state.map.h / 2) {
+          const prev = state.map.scale;
+          const scale = Math.min(7, Math.max(0.65, next));
+          if (scale === prev) return;
+          const cx = state.map.w / 2;
+          const cy = state.map.h / 2;
+          state.map.panX = ax - cx - ((ax - cx - state.map.panX) / prev) * scale;
+          state.map.panY = ay - cy - ((ay - cy - state.map.panY) / prev) * scale;
+          state.map.scale = scale;
+          draw();
+        }
+
+        function resetView() {
+          state.map.scale = 1;
+          state.map.panX = 0;
+          state.map.panY = 0;
+          draw();
+        }
+
+        function filtered() {
+          const q = state.search.trim().toLowerCase();
+          return data.routes
+            .filter((route) => {
+              if (state.mode !== "all" && route.transit_mode !== state.mode) return false;
+              if (!q) return true;
+              return `${routeName(route)} ${routeLabel(route)}`.toLowerCase().includes(q);
+            })
+            .sort((a, b) => a.on_time_rate - b.on_time_rate);
+        }
+
+        function renderList() {
+          listEl.textContent = "";
+          listEl.classList.toggle("has-sel", Boolean(state.selected));
+          const routes = filtered();
+          document.querySelector("#atCount").textContent = `${routes.length} routes shown`;
+          for (const route of routes) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = `at-item${route.key === state.selected ? " active" : ""}`;
+            btn.dataset.key = route.key;
+            const color = relHex(route.on_time_rate);
+            btn.innerHTML = `
+              <span class="at-chip" style="color:${color};border-color:${color}66">${routeLabel(route)}</span>
+              <span class="at-item-name">
+                <strong>${routeName(route)}</strong>
+                <span>${fmtInt(route.observations)} arrivals · P90 ${fmtDelay(route.p90_delay_seconds)}</span>
+              </span>
+              <span class="at-item-rate" style="color:${color}">${fmtPct(route.on_time_rate)}</span>
+            `;
+            btn.addEventListener("click", () => select(route.key));
+            listEl.append(btn);
+          }
+        }
+
+        function freshLive() {
+          const live = liveRef.current;
+          if (!live || !live.generatedAtUtc || !live.totals || !live.totals.stopArrivals) return null;
+          if (Date.now() - Date.parse(live.generatedAtUtc) > 10 * 60000) return null;
+          return live;
+        }
+
+        function delayHex(seconds) {
+          if (seconds > 300) return TOKENS.poor;
+          if (seconds > 120) return TOKENS.watch;
+          return TOKENS.good;
+        }
+
+        function liveBlock(route) {
+          const live = liveRef.current;
+          if (!live || !live.totals || !live.totals.stopArrivals) return "";
+          const lr = live.routes.find((item) => item.key === route.key);
+          if (!lr) {
+            return `<section class="at-section"><h3>Live</h3>
+              <div class="at-live"><span class="at-live-dot" style="background:var(--mut);animation:none"></span>
+              Not running right now</div></section>`;
+          }
+          const color = lr.mean_predicted_delay_seconds > 300 ? "var(--poor)" : lr.mean_predicted_delay_seconds > 120 ? "var(--watch)" : "var(--good)";
+          return `<section class="at-section"><h3>Live <small>${lr.trips} vehicles</small></h3>
+            <div class="at-live"><span class="at-live-dot"></span>
+            <span>Predicted delay <strong style="color:${color};font-family:var(--mono);font-size:0.92em">${fmtSignedMin(lr.mean_predicted_delay_seconds)}</strong>
+            · worst ${fmtSignedMin(lr.max_predicted_delay_seconds)} · ${lr.late_arrivals} late stop${lr.late_arrivals === 1 ? "" : "s"}</span></div>
+          </section>`;
+        }
+
+        function hourBlock(route) {
+          const rows = data.routeByHour[route.key] || [];
+          const byHour = new Map(rows.map((r) => [r.hour_of_day, r]));
+          let bars = "";
+          for (let h = 0; h < 24; h += 1) {
+            const row = byHour.get(h);
+            const label = h % 6 === 0 ? `<span>${h}</span>` : "";
+            if (!row || !row.observations) {
+              bars += `<i class="no-svc" title="${h}:00 · no service">${label}</i>`;
+            } else {
+              const rate = row.on_time_rate;
+              bars += `<i style="height:${Math.max(2, rate * 64)}px;background:${relHex(rate)}" title="${h}:00 · ${fmtPct(rate)} on-time">${label}</i>`;
+            }
+          }
+          return `<section class="at-section"><h3>By hour <small>on-time rate</small></h3>
+            <div class="at-hours" role="img" aria-label="${hourSummary(rows)}">${bars}</div></section>`;
+        }
+
+        function transferBlock(route) {
+          const rows = [...((data.transfers && data.transfers.byRoute[route.key]) || [])]
+            .sort((a, b) => a.success_rate - b.success_rate)
+            .slice(0, 5);
+          if (!rows.length) return "";
+          const items = rows
+            .map((t) => {
+              const target = data.routes.find((r) => r.key === t.toKey);
+              return `<button class="at-row" type="button" data-goto="${t.toKey}">
+                <span><strong>→ ${target ? routeName(target) : t.toKey}</strong>
+                <span>${t.transfer_stop_name} · ${fmtInt(t.attempts)} attempts</span></span>
+                <em style="color:${relColor(t.success_rate + 0.05)}">${fmtPct(t.success_rate)}</em>
+              </button>`;
+            })
+            .join("");
+          return `<section class="at-section"><h3>Connections <small>success rate</small></h3>
+            <div class="at-rows">${items}</div></section>`;
+        }
+
+        function stopsBlock(route) {
+          const stops = stopsInLineOrder(data, route.key);
+          if (!stops.length) return "";
+          const rows = stops
+            .map((s) => `<div class="at-row">
+              <span><strong>${s.stop_name}</strong><span>Direction ${s.direction_id} · ${fmtInt(s.observations)} obs</span></span>
+              <em style="color:${relColor(s.on_time_rate)}">${fmtPct(s.on_time_rate)}</em>
+            </div>`)
+            .join("");
+          return `<section class="at-section"><h3>Stops <small>${stops.length} platforms</small></h3>
+            <div class="at-rows">${rows}</div></section>`;
+        }
+
+        function renderDetail() {
+          const route = data.routes.find((r) => r.key === state.selected);
+          if (!route) {
+            detailEl.classList.remove("open");
+            detailEl.setAttribute("aria-hidden", "true");
+            return;
+          }
+          const color = relHex(route.on_time_rate);
+          detailEl.innerHTML = `
+            <div class="at-detail-scroll" tabindex="0" role="region" aria-label="Route details">
+              <header class="at-detail-head">
+                <span class="at-badge" style="color:${color};border-color:${color}">${routeLabel(route)}</span>
+                <div>
+                  <p>${route.transit_mode === "lrt" ? "Light rail line" : "Bus line"}</p>
+                  <h2>${routeName(route)}</h2>
+                </div>
+                <button class="at-close" type="button" aria-label="Close details">✕</button>
+              </header>
+              <div class="at-metricrow">
+                <article><span>On-time</span><strong style="color:${color}">${fmtPct(route.on_time_rate)}</strong></article>
+                <article><span>Late</span><strong>${fmtPct(route.late_rate)}</strong></article>
+                <article><span>Median</span><strong>${fmtDelay(route.median_delay_seconds)}</strong></article>
+                <article><span>P90</span><strong>${fmtDelay(route.p90_delay_seconds)}</strong></article>
+              </div>
+              ${liveBlock(route)}
+              ${hourBlock(route)}
+              ${transferBlock(route)}
+              ${stopsBlock(route)}
+            </div>
+          `;
+          detailEl.classList.add("open");
+          detailEl.setAttribute("aria-hidden", "false");
+
+          detailEl.querySelector(".at-close").addEventListener("click", () => select(null));
+          for (const btn of detailEl.querySelectorAll("[data-goto]")) {
+            btn.addEventListener("click", () => select(btn.dataset.goto));
+          }
+        }
+
+        function select(key) {
+          const prev = state.selected;
+          const next = key && prev !== key ? key : null;
+          state.selected = next;
+          renderList();
+          renderDetail();
+          draw();
+          /* move focus with the panel so keyboard users follow the change */
+          if (next) {
+            const heading = detailEl.querySelector("h2");
+            if (heading) {
+              heading.setAttribute("tabindex", "-1");
+              heading.focus({ preventScroll: true });
+            }
+          } else if (prev) {
+            const origin = listEl.querySelector(`[data-key="${prev}"]`) || searchEl;
+            origin.focus({ preventScroll: true });
+          }
+        }
+
+        /* controls */
+        searchEl.addEventListener("input", (event) => {
+          state.search = event.target.value;
+          renderList();
+        });
+
+        for (const btn of root.querySelectorAll(".at-modes button")) {
+          btn.addEventListener("click", () => {
+            for (const other of root.querySelectorAll(".at-modes button")) other.setAttribute("aria-pressed", "false");
+            btn.setAttribute("aria-pressed", "true");
+            state.mode = btn.dataset.mode;
+            renderList();
+          });
+        }
+
+        document.querySelector("#atZoomIn").addEventListener("click", () => setZoom(state.map.scale * 1.35));
+        document.querySelector("#atZoomOut").addEventListener("click", () => setZoom(state.map.scale / 1.35));
+        document.querySelector("#atZoomReset").addEventListener("click", resetView);
+
+        svg.addEventListener("wheel", (event) => {
+          event.preventDefault();
+          const rect = svg.getBoundingClientRect();
+          const factor = event.deltaY < 0 ? 1.16 : 1 / 1.16;
+          setZoom(state.map.scale * factor, event.clientX - rect.left, event.clientY - rect.top);
+        }, { passive: false });
+
+        svg.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0) return;
+          Object.assign(state.map, { dragging: true, sx: event.clientX, sy: event.clientY, px: state.map.panX, py: state.map.panY, moved: false });
+        });
+
+        svg.addEventListener("pointermove", (event) => {
+          if (!state.map.dragging) return;
+          /* capture only once a real drag starts, so plain clicks still
+             reach the route groups instead of being retargeted to the svg */
+          if (!state.map.moved && (Math.abs(event.clientX - state.map.sx) > 3 || Math.abs(event.clientY - state.map.sy) > 3)) {
+            state.map.moved = true;
+            svg.classList.add("dragging");
+            svg.setPointerCapture(event.pointerId);
+          }
+          if (!state.map.moved) return;
+          state.map.panX = state.map.px + event.clientX - state.map.sx;
+          state.map.panY = state.map.py + event.clientY - state.map.sy;
+          draw();
+        });
+
+        svg.addEventListener("pointerup", (event) => {
+          state.map.dragging = false;
+          svg.classList.remove("dragging");
+          if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
+          window.setTimeout(() => { state.map.moved = false; }, 0);
+        });
+
+        svg.addEventListener("pointercancel", () => {
+          state.map.dragging = false;
+          svg.classList.remove("dragging");
+        });
+
+        svg.addEventListener("click", (event) => {
+          if (state.map.moved) return;
+          if (mapClickFn && document.body.dataset.view === "planner") {
+            const rect = svg.getBoundingClientRect();
+            mapClickFn(event.clientX - rect.left, event.clientY - rect.top);
+            return;
+          }
+          if (event.target === svg && state.selected) select(null);
+        });
+
+        svg.addEventListener("keydown", (event) => {
+          const pan = 80;
+          if (event.key === "+" || event.key === "=") { event.preventDefault(); setZoom(state.map.scale * 1.35); return; }
+          if (event.key === "-" || event.key === "_") { event.preventDefault(); setZoom(state.map.scale / 1.35); return; }
+          if (event.key === "0") { event.preventDefault(); resetView(); return; }
+          if (event.key === "ArrowUp") state.map.panY += pan;
+          else if (event.key === "ArrowDown") state.map.panY -= pan;
+          else if (event.key === "ArrowLeft") state.map.panX += pan;
+          else if (event.key === "ArrowRight") state.map.panX -= pan;
+          else return;
+          event.preventDefault();
+          draw();
+        });
+
+        window.addEventListener("resize", () => {
+          if (!root.hidden) draw();
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && !root.hidden && state.selected) select(null);
+        });
+
+        renderList();
+        draw();
+
+        return {
+          redraw: draw,
+          project,
+          screenToGeo,
+          svgEl: svg,
+          setOverlay(fn) { overlayFn = fn; draw(); },
+          setMapClick(fn) { mapClickFn = fn; },
+        };
+      }
+
+      /* ================================================================
+         REPORT VIEW
+         ================================================================ */
+      function reportModule(data, live, sys) {
+        const root = document.querySelector("#reportRoot");
+        const state = { mode: "all", sort: "worst", expanded: null, heroPlayed: false };
+
+        const start = fmtDateLong(data.overall.startDate);
+        const end = fmtDateLong(data.overall.endDate);
+        const year = data.overall.endDate.slice(0, 4);
+        document.querySelector("#ldDates").textContent = `${start} – ${end}, ${year} · ${data.systemByDate.length} service days`;
+
+        /* hero */
+        const millions = (sys.obs / 1e6).toFixed(2);
+        document.querySelector("#ldKicker").textContent =
+          `We watched ${millions} million scheduled arrivals across ${data.routes.length} routes. Here is what showed up on time.`;
+        document.querySelector("#ldDeck").textContent =
+          `of observed arrivals ran on schedule. The typical vehicle ran ${fmtDelay(sys.median)} behind — but the worst tenth slipped past ${fmtDelay(sys.p90)}.`;
+        document.querySelector("#ldHeroStats").innerHTML = `
+          <div><strong>${millions} M</strong><span>arrivals observed</span></div>
+          <div><strong>${fmtDelay(sys.median)}</strong><span>median delay</span></div>
+          <div><strong>${fmtDelay(sys.p90)}</strong><span>p90 delay</span></div>
+          <div><strong>${data.routes.length}</strong><span>routes tracked</span></div>
+        `;
+
+        /* field-note facts */
+        function fillFacts() {
+          const hours = systemByHour(data).filter((h) => h.observations > 1000);
+          const worstHour = hours.reduce((a, b) => (b.on_time_rate < a.on_time_rate ? b : a), hours[0]);
+          const bestHour = hours.reduce((a, b) => (b.on_time_rate > a.on_time_rate ? b : a), hours[0]);
+          const worstRoute = [...data.routes].sort((a, b) => a.on_time_rate - b.on_time_rate)[0];
+          const worstTransfer = ((data.transfers && data.transfers.worst) || [])[0];
+
+          const facts = {
+            worstHour: fmtHour(worstHour.hour_of_day),
+            worstHourRate: fmtPct(worstHour.on_time_rate),
+            bestHour: fmtHour(bestHour.hour_of_day),
+            bestHourRate: fmtPct(bestHour.on_time_rate),
+            worstRouteName: routeName(worstRoute),
+            worstRouteRate: fmtPct(worstRoute.on_time_rate),
+            worstRouteObs: fmtInt(worstRoute.observations),
+            worstRouteP90: fmtDelay(worstRoute.p90_delay_seconds),
+          };
+
+          if (worstTransfer) {
+            const from = data.routes.find((r) => r.key === worstTransfer.fromKey);
+            const to = data.routes.find((r) => r.key === worstTransfer.toKey);
+            facts.transferPair = `${from ? routeName(from) : worstTransfer.fromKey} → ${to ? routeName(to) : worstTransfer.toKey}`;
+            facts.transferStop = worstTransfer.transfer_stop_name;
+            facts.transferWait = fmtDelay(worstTransfer.median_scheduled_wait_seconds);
+            facts.transferRate = fmtPct(worstTransfer.success_rate);
+          }
+
+          for (const el of root.querySelectorAll("[data-fact]")) {
+            el.textContent = facts[el.dataset.fact] ?? "—";
+          }
+        }
+
+        function playHero() {
+          if (state.heroPlayed) return;
+          state.heroPlayed = true;
+          const el = document.querySelector("#ldBig");
+          const target = sys.onTime * 100;
+          if (reducedMotion()) {
+            el.textContent = target.toFixed(1);
+            return;
+          }
+          const t0 = performance.now();
+          const dur = 1400;
+          function tick(now) {
+            const p = Math.min(1, (now - t0) / dur);
+            const eased = 1 - Math.pow(1 - p, 3);
+            el.textContent = (target * eased).toFixed(1);
+            if (p < 1) requestAnimationFrame(tick);
+          }
+          requestAnimationFrame(tick);
+        }
+
+        /* trend chart */
+        function buildTrend() {
+          const rows = data.systemByDate;
+          const W = 940;
+          const H = 290;
+          const padL = 52;
+          const padR = 14;
+          const padT = 16;
+          const padB = 34;
+          const rates = rows.map((r) => r.on_time_rate);
+          const lo = Math.min(...rates) - 0.012;
+          const hi = Math.min(1.002, Math.max(...rates) + 0.006);
+          const x = (i) => padL + (i / (rows.length - 1)) * (W - padL - padR);
+          const y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+
+          const svg = document.querySelector("#ldTrend");
+          svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+          let inner = "";
+
+          rows.forEach((r, i) => {
+            const day = new Date(`${r.snapshot_date}T12:00:00`).getDay();
+            if (day === 0 || day === 6) {
+              const x0 = i === 0 ? padL : (x(i - 1) + x(i)) / 2;
+              const x1 = i === rows.length - 1 ? x(i) : (x(i) + x(i + 1)) / 2;
+              inner += `<rect x="${x0.toFixed(1)}" y="${padT}" width="${(x1 - x0).toFixed(1)}" height="${H - padT - padB}" fill="rgba(234,232,225,0.045)"/>`;
+            }
+          });
+
+          for (const g of [0.9, 0.95, 1.0]) {
+            if (g < lo || g > hi) continue;
+            inner += `<line x1="${padL}" x2="${W - padR}" y1="${y(g).toFixed(1)}" y2="${y(g).toFixed(1)}" stroke="${TOKENS.rule}" stroke-dasharray="3 5"/>
+              <text x="${padL - 8}" y="${(y(g) + 4).toFixed(1)}" fill="${TOKENS.mut}" font-size="11.5" text-anchor="end" font-family="IBM Plex Mono,monospace">${Math.round(g * 100)}%</text>`;
+          }
+
+          const pts = rows.map((r, i) => [x(i), y(r.on_time_rate)]);
+          const line = pts.map(([px, py], i) => `${i === 0 ? "M" : "L"}${px.toFixed(1)} ${py.toFixed(1)}`).join(" ");
+          inner += `<path d="${line} L${pts[pts.length - 1][0].toFixed(1)} ${H - padB} L${pts[0][0].toFixed(1)} ${H - padB} Z" fill="${TOKENS.good}12"/>`;
+          inner += `<path d="${line}" fill="none" stroke="${TOKENS.good}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`;
+
+          rows.forEach((r, i) => {
+            inner += `<circle cx="${x(i).toFixed(1)}" cy="${y(r.on_time_rate).toFixed(1)}" r="3" fill="${TOKENS.bg}" stroke="${TOKENS.good}" stroke-width="1.6" data-i="${i}"/>`;
+          });
+
+          const tickEvery = Math.ceil(rows.length / 6);
+          rows.forEach((r, i) => {
+            if (i % tickEvery !== 0 && i !== rows.length - 1) return;
+            const label = new Date(`${r.snapshot_date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            const anchor = i === rows.length - 1 ? "end" : i === 0 ? "start" : "middle";
+            inner += `<text x="${x(i).toFixed(1)}" y="${H - 10}" fill="${TOKENS.mut}" font-size="11.5" text-anchor="${anchor}" font-family="IBM Plex Mono,monospace">${label}</text>`;
+          });
+
+          svg.innerHTML = inner;
+
+          const tip = document.querySelector("#ldTip");
+          svg.addEventListener("mousemove", (event) => {
+            const rect = svg.getBoundingClientRect();
+            const mx = ((event.clientX - rect.left) / rect.width) * W;
+            let best = 0;
+            let bestD = Infinity;
+            rows.forEach((r, i) => {
+              const d = Math.abs(x(i) - mx);
+              if (d < bestD) { bestD = d; best = i; }
+            });
+            const r = rows[best];
+            tip.style.display = "block";
+            tip.style.left = `${(x(best) / W) * rect.width}px`;
+            tip.style.top = `${(y(r.on_time_rate) / H) * rect.height}px`;
+            tip.textContent = `${fmtDateLong(r.snapshot_date)} · ${fmtPct(r.on_time_rate)} · ${fmtInt(r.observations)} obs`;
+          });
+          svg.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+
+          const best = rows.reduce((a, b) => (b.on_time_rate > a.on_time_rate && b.observations > 20000 ? b : a), rows[1] || rows[0]);
+          const worst = rows.reduce((a, b) => (b.on_time_rate < a.on_time_rate ? b : a), rows[0]);
+          const trendSummary =
+            `Daily on-time performance held between ${fmtPct(worst.on_time_rate)} (${fmtDateLong(worst.snapshot_date)}) and ${fmtPct(best.on_time_rate)} (${fmtDateLong(best.snapshot_date)}) — dependable on average, with day-to-day swings riders feel at the curb.`;
+          document.querySelector("#ldTrendSub").textContent = trendSummary;
+          svg.setAttribute("aria-label", `Chart: daily on-time rate. ${trendSummary}`);
+        }
+
+        /* live */
+        function buildLive() {
+          if (!live || !live.totals || !live.totals.stopArrivals) return;
+          const section = document.querySelector("#ldLive");
+          section.hidden = false;
+          const lateRoutes = live.routes.filter((r) => r.late_arrivals > 0).length;
+          const lateArrivals = live.routes.reduce((sum, r) => sum + r.late_arrivals, 0);
+          const updated = new Date(live.generatedAtUtc).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          document.querySelector("#ldLiveTime").textContent = `as of ${updated}`;
+          document.querySelector("#ldLiveSub").textContent =
+            `${fmtInt(live.totals.trips)} vehicles are out on ${live.totals.routes} routes. The model expects ${fmtInt(lateArrivals)} of ${fmtInt(live.totals.stopArrivals)} upcoming arrivals to run more than five minutes late, concentrated on ${lateRoutes} routes. The hardest-hit arrivals:`;
+
+          const wrap = document.querySelector("#ldArrivals");
+          wrap.textContent = "";
+          for (const a of (live.worstArrivals || []).slice(0, 6)) {
+            const div = document.createElement("div");
+            div.className = "ld-arrival";
+            const color = a.predicted_delay_seconds > 300 ? "var(--poor)" : a.predicted_delay_seconds > 120 ? "var(--watch)" : "var(--good)";
+            div.innerHTML = `
+              <strong>${a.transit_mode === "lrt" ? "LRT" : "Bus"} ${a.route_short_name} → ${a.trip_headsign || ""}</strong>
+              <span>${a.stop_name || a.stop_id} · due in ${Math.max(0, Math.round(a.eta_minutes))} min</span>
+              <em style="color:${color}">${fmtSignedMin(a.predicted_delay_seconds)} predicted</em>
+            `;
+            wrap.append(div);
+          }
+        }
+
+        /* league table */
+        function sortedRoutes() {
+          const routes = data.routes.filter((r) => state.mode === "all" || r.transit_mode === state.mode);
+          const byNumber = (a, b) => {
+            const an = Number(routeLabel(a));
+            const bn = Number(routeLabel(b));
+            if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+            return routeLabel(a).localeCompare(routeLabel(b), undefined, { numeric: true });
+          };
+          const cmp = {
+            worst: (a, b) => a.on_time_rate - b.on_time_rate,
+            best: (a, b) => b.on_time_rate - a.on_time_rate,
+            busiest: (a, b) => b.observations - a.observations,
+            number: byNumber,
+          }[state.sort];
+          return [...routes].sort(cmp);
+        }
+
+        function drillContent(route) {
+          const hourRows = data.routeByHour[route.key] || [];
+          const byHour = new Map(hourRows.map((r) => [r.hour_of_day, r]));
+          let bars = "";
+          for (let h = 0; h < 24; h += 1) {
+            const row = byHour.get(h);
+            const label = h % 6 === 0 ? `<span>${h}:00</span>` : "";
+            if (!row || !row.observations) {
+              bars += `<i class="no-svc" title="${h}:00 · no service">${label}</i>`;
+            } else {
+              const rate = row.on_time_rate;
+              bars += `<i style="height:${Math.max(2, rate * 86)}px;background:${relHex(rate)}" title="${h}:00 · ${fmtPct(rate)} on-time">${label}</i>`;
+            }
+          }
+
+          const stops = [...(data.routeStops[route.key] || [])]
+            .filter((s) => s.observations >= 50)
+            .sort((a, b) => a.on_time_rate - b.on_time_rate)
+            .slice(0, 5);
+          const stopRows = stops.length
+            ? stops.map((s) => `<div class="ld-minirow">
+                <span>${s.stop_name}<small>direction ${s.direction_id} · ${fmtInt(s.observations)} obs</small></span>
+                <em style="color:${relColor(s.on_time_rate)}">${fmtPct(s.on_time_rate)}</em>
+              </div>`).join("")
+            : `<p class="ld-mutetext">No stop-level data.</p>`;
+
+          const transfers = [...((data.transfers && data.transfers.byRoute[route.key]) || [])]
+            .sort((a, b) => a.success_rate - b.success_rate)
+            .slice(0, 4);
+          const transferRows = transfers.length
+            ? transfers.map((t) => {
+                const target = data.routes.find((r) => r.key === t.toKey);
+                return `<div class="ld-minirow">
+                  <span>→ ${target ? routeName(target) : t.toKey} at ${t.transfer_stop_name}<small>${fmtInt(t.attempts)} attempts · ${Math.round(t.median_scheduled_wait_seconds / 60)} min scheduled wait</small></span>
+                  <em style="color:${relColor(t.success_rate + 0.05)}">${fmtPct(t.success_rate)}</em>
+                </div>`;
+              }).join("")
+            : `<p class="ld-mutetext">No frequently used onward connections observed.</p>`;
+
+          let liveLine = "";
+          if (live && live.totals && live.totals.stopArrivals) {
+            const lr = live.routes.find((item) => item.key === route.key);
+            liveLine = lr
+              ? `<p class="ld-mutetext" style="margin:14px 0 0">Live: ${lr.trips} vehicles out, predicted delay ${fmtSignedMin(lr.mean_predicted_delay_seconds)} on average, worst ${fmtSignedMin(lr.max_predicted_delay_seconds)}.</p>`
+              : `<p class="ld-mutetext" style="margin:14px 0 0">Live: not running right now.</p>`;
+          }
+
+          return `<div class="ld-drillgrid">
+            <div>
+              <h3>On-time by hour</h3>
+              <div class="ld-hours" role="img" aria-label="${hourSummary(hourRows)}">${bars}</div>
+              <div class="ld-statstrip">
+                <div><strong>${fmtPct(route.on_time_rate)}</strong><span>on-time</span></div>
+                <div><strong>${fmtPct(route.late_rate)}</strong><span>late</span></div>
+                <div><strong>${fmtDelay(route.median_delay_seconds)}</strong><span>median</span></div>
+                <div><strong>${fmtDelay(route.p90_delay_seconds)}</strong><span>p90</span></div>
+              </div>
+              <h3 style="margin-top:20px">Riskiest connections</h3>
+              <div class="ld-minilist">${transferRows}</div>
+            </div>
+            <div>
+              <h3>Slowest stops</h3>
+              <div class="ld-minilist">${stopRows}</div>
+              ${liveLine}
+            </div>
+          </div>`;
+        }
+
+        function renderTable() {
+          const table = document.querySelector("#ldTable");
+          table.textContent = "";
+          const routes = sortedRoutes();
+          const barLo = 0.7;
+
+          routes.forEach((route, index) => {
+            const row = document.createElement("div");
+            row.className = "ld-row";
+            const color = relHex(route.on_time_rate);
+            const width = Math.max(2, ((route.on_time_rate - barLo) / (1 - barLo)) * 100);
+
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "ld-rowbtn";
+            btn.setAttribute("aria-expanded", String(state.expanded === route.key));
+            btn.innerHTML = `
+              <span class="ld-rank">${String(index + 1).padStart(2, "0")}</span>
+              <span class="ld-chip" style="color:${color};border-color:${color}66">${routeLabel(route)}</span>
+              <span class="ld-rname">${routeName(route)}</span>
+              <span class="ld-barwrap" aria-hidden="true"><i style="width:${width.toFixed(1)}%;background:${color}"></i></span>
+              <span class="ld-rate" style="color:${color}"><span class="sr-only">on-time </span>${fmtPct(route.on_time_rate)}</span>
+              <span class="ld-p90"><span class="sr-only">P90 delay </span>${fmtDelay(route.p90_delay_seconds)}</span>
+              <span class="ld-caret" aria-hidden="true">▾</span>
+            `;
+
+            const drill = document.createElement("div");
+            drill.className = `ld-drill${state.expanded === route.key ? " open" : ""}`;
+            drill.innerHTML = `<div>${state.expanded === route.key ? drillContent(route) : ""}</div>`;
+
+            btn.addEventListener("click", () => {
+              const opening = state.expanded !== route.key;
+              state.expanded = opening ? route.key : null;
+              for (const other of table.querySelectorAll(".ld-rowbtn")) other.setAttribute("aria-expanded", "false");
+              for (const other of table.querySelectorAll(".ld-drill")) {
+                other.classList.remove("open");
+                other.firstElementChild.textContent = "";
+              }
+              if (opening) {
+                btn.setAttribute("aria-expanded", "true");
+                drill.firstElementChild.innerHTML = drillContent(route);
+                drill.classList.add("open");
+              }
+            });
+
+            row.append(btn, drill);
+            table.append(row);
+          });
+        }
+
+        /* transfers */
+        function buildTransfers() {
+          const list = document.querySelector("#ldTransfers");
+          list.textContent = "";
+          for (const t of ((data.transfers && data.transfers.worst) || []).slice(0, 8)) {
+            const from = data.routes.find((r) => r.key === t.fromKey);
+            const to = data.routes.find((r) => r.key === t.toKey);
+            const li = document.createElement("li");
+            li.innerHTML = `
+              <div>
+                <strong>${from ? routeName(from) : t.fromKey} → ${to ? routeName(to) : t.toKey}</strong>
+                <small>${t.transfer_stop_name} · ${fmtInt(t.attempts)} attempts · ${Math.round(t.median_scheduled_wait_seconds / 60)} min scheduled wait</small>
+              </div>
+              <div class="ld-transrate" style="color:${relColor(t.success_rate + 0.05)}">${fmtPct(t.success_rate)}<small>make rate</small></div>
+            `;
+            list.append(li);
+          }
+        }
+
+        document.querySelector("#ldColophon").textContent =
+          `Compiled from ${fmtInt(sys.obs)} GTFS-Realtime arrival observations against scheduled GTFS times, ${start} – ${end}, ${year}. Live predictions by a LightGBM model over the realtime feed. A project by the GRT Reliability Tracker.`;
+
+        /* controls */
+        for (const btn of root.querySelectorAll(".ld-filters button")) {
+          btn.addEventListener("click", () => {
+            for (const other of root.querySelectorAll(".ld-filters button")) other.setAttribute("aria-pressed", "false");
+            btn.setAttribute("aria-pressed", "true");
+            state.mode = btn.dataset.mode;
+            state.expanded = null;
+            renderTable();
+          });
+        }
+
+        document.querySelector("#ldSort").addEventListener("change", (event) => {
+          state.sort = event.target.value;
+          renderTable();
+        });
+
+        /* scroll reveals */
+        const observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("in");
+              if (entry.target.classList.contains("ld-hero")) playHero();
+              observer.unobserve(entry.target);
+            }
+          }
+        }, { threshold: 0.12 });
+        for (const el of root.querySelectorAll(".ld-reveal")) observer.observe(el);
+
+        fillFacts();
+        buildTrend();
+        buildLive();
+        renderTable();
+        buildTransfers();
+
+        return {
+          onShow() {
+            playHero();
+          },
+        };
+      }
+
+      /* ================================================================
+         PLANNER VIEW — UI around the pure GRTPlanner module
+         ================================================================ */
+      function plannerModule(data, liveRef, atlas) {
+        const els = {
+          from: document.querySelector("#plFrom"),
+          to: document.querySelector("#plTo"),
+          fromClear: document.querySelector("#plFromClear"),
+          toClear: document.querySelector("#plToClear"),
+          fromSuggest: document.querySelector("#plFromSuggest"),
+          toSuggest: document.querySelector("#plToSuggest"),
+          time: document.querySelector("#plTime"),
+          now: document.querySelector("#plNow"),
+          go: document.querySelector("#plGo"),
+          hint: document.querySelector("#plHint"),
+          results: document.querySelector("#plResults"),
+          foot: document.querySelector("#plFoot"),
+        };
+
+        const state = {
+          prep: null,
+          loading: false,
+          from: null,
+          to: null,
+          itineraries: [],
+          active: -1,
+        };
+
+        function fmtClock(seconds) {
+          const s = ((Math.round(seconds) % 86400) + 86400) % 86400;
+          const h = Math.floor(s / 3600);
+          const m = Math.floor((s % 3600) / 60);
+          const half = h >= 12 ? "PM" : "AM";
+          return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${half}`;
+        }
+
+        function fmtDur(seconds) {
+          const m = Math.max(1, Math.round(seconds / 60));
+          return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+        }
+
+        function routeMeta(routeKey) {
+          const route = data.routes.find((r) => r.key === routeKey);
+          return {
+            label: route ? routeLabel(route) : routeKey.split(":")[1],
+            name: route ? routeName(route) : routeKey,
+            color: route ? relHex(route.on_time_rate) : TOKENS.ok,
+          };
+        }
+
+        function freshLiveData() {
+          const live = liveRef.current;
+          if (!live || !live.generatedAtUtc || !live.totals || !live.totals.stopArrivals) return null;
+          if (Date.now() - Date.parse(live.generatedAtUtc) > 10 * 60000) return null;
+          return live;
+        }
+
+        function nowSecondsLocal() {
+          const d = new Date();
+          return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+        }
+
+        function setStatus(text) {
+          els.results.innerHTML = text ? `<p class="pl-status">${text}</p>` : "";
+        }
+
+        async function ensureTimetable() {
+          if (state.prep || state.loading) return;
+          state.loading = true;
+          setStatus("Loading timetable…");
+          try {
+            const response = await fetch("data/timetable.json");
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const tt = await response.json();
+            state.prep = GRTPlanner.prepare(tt);
+            els.foot.textContent = `Timetable for ${fmtDateLong(tt.serviceDate)}, ${tt.serviceDate.slice(0, 4)} · ${tt.stops.ids.length} stops`;
+            setStatus(null);
+            maybePlan();
+          } catch (error) {
+            setStatus(`Couldn't load the timetable — run analysis/export_timetable.py. (${error.message})`);
+          }
+          state.loading = false;
+        }
+
+        /* ---- inputs ---- */
+
+        function setPoint(which, point) {
+          state[which] = point;
+          els[which].value = point ? point.label : "";
+          syncControls();
+          maybePlan();
+          atlas.redraw();
+        }
+
+        function syncControls() {
+          els.go.disabled = !(state.from && state.to && state.prep);
+          els.hint.hidden = Boolean(state.from && state.to);
+          if (!state.from || !state.to) {
+            state.itineraries = [];
+            state.active = -1;
+            setStatus(null);
+          }
+        }
+
+        function suggest(which) {
+          const input = els[which];
+          const box = els[`${which}Suggest`];
+          const q = input.value.trim().toLowerCase();
+          box.innerHTML = "";
+          if (!state.prep || q.length < 2) {
+            box.hidden = true;
+            return;
+          }
+          const tt = state.prep.tt;
+          const matches = [];
+          for (let i = 0; i < tt.stops.names.length && matches.length < 8; i += 1) {
+            if (tt.stops.names[i].toLowerCase().includes(q)) matches.push(i);
+          }
+          if (!matches.length) {
+            box.hidden = true;
+            return;
+          }
+          for (const idx of matches) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.innerHTML = `${tt.stops.names[idx]}<small>stop ${tt.stops.ids[idx]}</small>`;
+            btn.addEventListener("mousedown", (event) => {
+              event.preventDefault();
+              box.hidden = true;
+              setPoint(which, { lat: tt.stops.lats[idx], lon: tt.stops.lons[idx], label: tt.stops.names[idx] });
+            });
+            box.append(btn);
+          }
+          box.hidden = false;
+        }
+
+        function onMapClick(px, py) {
+          const geo = atlas.screenToGeo(px, py);
+          const label = `Map point (${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)})`;
+          const point = { lat: geo.lat, lon: geo.lon, label };
+          if (!state.from) setPoint("from", point);
+          else if (!state.to) setPoint("to", point);
+          else setPoint("to", point);
+        }
+
+        /* ---- planning ---- */
+
+        function departSecondsFromInput() {
+          const value = els.time.value;
+          if (!value) return nowSecondsLocal();
+          const [h, m] = value.split(":").map(Number);
+          return h * 3600 + m * 60;
+        }
+
+        function maybePlan() {
+          if (!state.prep || !state.from || !state.to) return;
+          const res = GRTPlanner.plan(state.prep, {
+            from: state.from,
+            to: state.to,
+            departSeconds: departSecondsFromInput(),
+            nowSeconds: nowSecondsLocal(),
+            live: freshLiveData(),
+          });
+          if (res.error === "no-origin-stops") {
+            state.itineraries = [];
+            state.active = -1;
+            setStatus("No stops within a 600 m walk of the origin — try a point closer to a route.");
+          } else if (res.error === "no-destination-stops") {
+            state.itineraries = [];
+            state.active = -1;
+            setStatus("No stops within a 600 m walk of the destination — try a point closer to a route.");
+          } else if (!res.itineraries.length) {
+            state.itineraries = [];
+            state.active = -1;
+            setStatus("No trips found after that time on this service day.");
+          } else {
+            state.itineraries = res.itineraries;
+            state.active = 0;
+            renderResults();
+          }
+          atlas.redraw();
+        }
+
+        /* ---- results ---- */
+
+        function mergedLegs(itin) {
+          const out = [];
+          for (const leg of itin.legs) {
+            const prev = out[out.length - 1];
+            if (leg.type === "walk" && prev && prev.type === "walk") {
+              prev.seconds += leg.seconds;
+            } else {
+              out.push({ ...leg });
+            }
+          }
+          return out.filter((l) => l.type === "transit" || l.seconds >= 60);
+        }
+
+        function transferLine(t) {
+          const tt = state.prep.tt;
+          const color = t.makeRate >= 0.9 ? "var(--good)" : t.makeRate >= 0.75 ? "var(--watch)" : "var(--poor)";
+          return `<div class="pl-xfer">Transfer at ${tt.stops.names[t.atStop]} · ${Math.round(t.slackSeconds / 60)} min slack ·
+            <strong style="color:${color}">${Math.round(t.makeRate * 100)}% make it</strong>${t.observed ? "" : " (est.)"}</div>`;
+        }
+
+        function renderResults() {
+          const tt = state.prep.tt;
+          els.results.innerHTML = "";
+          state.itineraries.forEach((itin, index) => {
+            const card = document.createElement("button");
+            card.type = "button";
+            card.className = `pl-itin${index === state.active ? " active" : ""}`;
+            card.setAttribute("aria-expanded", String(index === state.active));
+
+            const chips = mergedLegs(itin).map((leg) => {
+              if (leg.type === "walk") return `<span class="walk">walk ${Math.round(leg.seconds / 60)}′</span>`;
+              const meta = routeMeta(leg.routeKey);
+              return `<span class="pl-chip" style="color:${meta.color};border-color:${meta.color}66">${meta.label}</span>`;
+            }).join('<span class="walk">→</span>');
+
+            const duration = itin.scheduledArriveSeconds - itin.leaveSeconds;
+            const xferText = itin.transferCount
+              ? ` · <strong>${Math.round(itin.success * 100)}%</strong> makes all transfers`
+              : "";
+
+            let steps = "";
+            if (index === state.active) {
+              let xferIdx = 0;
+              steps = '<div class="pl-steps">' + mergedLegs(itin).map((leg) => {
+                if (leg.type === "walk") {
+                  return `<div class="pl-step"><em></em><span>Walk ${fmtDur(leg.seconds)}</span></div>`;
+                }
+                const meta = routeMeta(leg.routeKey);
+                const live = leg.liveDelta !== null && leg.liveDelta !== undefined
+                  ? `<small style="color:${leg.liveDelta > 120 ? "var(--watch)" : "var(--good)"}">live: running ${fmtSignedMin(leg.liveDelta)}</small>`
+                  : "";
+                const xfer = itin.transfers[xferIdx] && itin.transfers[xferIdx].toRouteKey === leg.routeKey
+                  && itin.transfers[xferIdx].atStop === leg.boardStop
+                  ? transferLine(itin.transfers[xferIdx++])
+                  : "";
+                return `${xfer}<div class="pl-step">
+                  <em>${fmtClock(leg.boardSeconds)}</em>
+                  <span><strong style="color:${meta.color}">${meta.name}</strong> → ${leg.headsign}
+                  <small>${tt.stops.names[leg.boardStop]} → ${tt.stops.names[leg.alightStop]} · ${leg.stopCount} stops · off at ${fmtClock(leg.alightSeconds)}</small>${live}</span>
+                </div>`;
+              }).join("") + "</div>";
+            }
+
+            card.innerHTML = `
+              <div class="pl-itin-head">
+                <strong>${fmtClock(itin.leaveSeconds)} → ${fmtClock(itin.scheduledArriveSeconds)}</strong>
+                <span>${fmtDur(duration)} · ${itin.transferCount} transfer${itin.transferCount === 1 ? "" : "s"}</span>
+              </div>
+              <div class="pl-chips">${chips}</div>
+              <div class="pl-rel">90% chance by <strong>${fmtClock(itin.p90ArriveSeconds)}</strong>${xferText}</div>
+              ${steps}
+            `;
+            card.addEventListener("click", () => {
+              state.active = index;
+              renderResults();
+              atlas.redraw();
+            });
+            els.results.append(card);
+          });
+        }
+
+        /* ---- map overlay ---- */
+
+        function addPath(layer, points, cls, stroke, width, extra) {
+          const d = points.map(([lat, lon], i) => {
+            const [x, y] = atlas.project(lat, lon);
+            return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+          }).join(" ");
+          const path = document.createElementNS(SVG_NS, "path");
+          path.setAttribute("class", cls);
+          path.setAttribute("d", d);
+          if (stroke) path.setAttribute("stroke", stroke);
+          path.setAttribute("stroke-width", width);
+          if (extra) for (const [k, v] of Object.entries(extra)) path.setAttribute(k, v);
+          layer.append(path);
+          return path;
+        }
+
+        function addPin(layer, lat, lon, letter, color) {
+          const [x, y] = atlas.project(lat, lon);
+          const ring = document.createElementNS(SVG_NS, "circle");
+          ring.setAttribute("class", "pl-pin-ring");
+          ring.setAttribute("cx", x.toFixed(1));
+          ring.setAttribute("cy", y.toFixed(1));
+          ring.setAttribute("r", "9");
+          ring.setAttribute("stroke", color);
+          const text = document.createElementNS(SVG_NS, "text");
+          text.setAttribute("class", "pl-pin-label");
+          text.setAttribute("x", x.toFixed(1));
+          text.setAttribute("y", (y + 4).toFixed(1));
+          text.textContent = letter;
+          layer.append(ring, text);
+        }
+
+        function overlay(layer) {
+          const itin = state.active >= 0 ? state.itineraries[state.active] : null;
+          atlas.svgEl.classList.toggle("has-itin", Boolean(itin));
+
+          if (itin && state.prep) {
+            const tt = state.prep.tt;
+            let prevPoint = state.from ? [state.from.lat, state.from.lon] : null;
+            for (const leg of itin.legs) {
+              if (leg.type !== "transit") continue;
+              const pts = leg.viaStops.map((idx) => [tt.stops.lats[idx], tt.stops.lons[idx]]);
+              if (prevPoint) addPath(layer, [prevPoint, pts[0]], "pl-walkleg", null, 2);
+              const meta = routeMeta(leg.routeKey);
+              addPath(layer, pts, "pl-leg-casing", null, 8);
+              addPath(layer, pts, "pl-leg", meta.color, 4.5);
+              for (const end of [pts[0], pts[pts.length - 1]]) {
+                const [x, y] = atlas.project(end[0], end[1]);
+                const dot = document.createElementNS(SVG_NS, "circle");
+                dot.setAttribute("class", "pl-legstop");
+                dot.setAttribute("cx", x.toFixed(1));
+                dot.setAttribute("cy", y.toFixed(1));
+                dot.setAttribute("r", "4");
+                dot.setAttribute("stroke", meta.color);
+                layer.append(dot);
+              }
+              prevPoint = pts[pts.length - 1];
+            }
+            if (prevPoint && state.to) addPath(layer, [prevPoint, [state.to.lat, state.to.lon]], "pl-walkleg", null, 2);
+          }
+
+          if (state.from) addPin(layer, state.from.lat, state.from.lon, "A", TOKENS.good);
+          if (state.to) addPin(layer, state.to.lat, state.to.lon, "B", TOKENS.poor);
+        }
+
+        /* ---- events ---- */
+
+        for (const which of ["from", "to"]) {
+          els[which].addEventListener("input", () => suggest(which));
+          els[which].addEventListener("blur", () => { els[`${which}Suggest`].hidden = true; });
+          els[which].addEventListener("focus", () => suggest(which));
+          els[`${which}Clear`].addEventListener("click", () => setPoint(which, null));
+        }
+
+        els.time.addEventListener("change", maybePlan);
+        els.now.addEventListener("click", () => {
+          const d = new Date();
+          els.time.value = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+          maybePlan();
+        });
+        els.go.addEventListener("click", maybePlan);
+
+        return {
+          activate() {
+            atlas.setMapClick(onMapClick);
+            atlas.setOverlay(overlay);
+            if (!els.time.value) {
+              const d = new Date();
+              els.time.value = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+            }
+            syncControls();
+            ensureTimetable();
+          },
+          deactivate() {
+            atlas.setMapClick(null);
+            atlas.svgEl.classList.remove("has-itin");
+            atlas.setOverlay(null);
+          },
+        };
+      }
+
+      /* ================================================================
+         Boot + view switching
+         ================================================================ */
+      async function boot() {
+        let data;
+        let live = null;
+        try {
+          const response = await fetch("data/dashboard-data.json");
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          data = await response.json();
+        } catch (error) {
+          const div = document.createElement("div");
+          div.className = "load-error";
+          div.innerHTML = `<div><h2 style="font-weight:500">Couldn't load dashboard data</h2>
+            <p>Serve this folder over HTTP and reload:</p>
+            <code>cd dashboard && python3 -m http.server 8000</code>
+            <p style="opacity:.6;margin-top:14px;font-size:13px">${error.message}</p></div>`;
+          document.body.append(div);
+          return;
+        }
+        try {
+          const response = await fetch(`data/live-predictions.json?t=${Date.now()}`, { cache: "no-store" });
+          live = response.ok ? await response.json() : null;
+        } catch { live = null; }
+
+        /* drop leading partial-collection days (collection started mid-evening
+           on the first day, so its near-perfect on-time rate is an artifact) */
+        const sortedObs = data.systemByDate.map((r) => r.observations).sort((a, b) => a - b);
+        const medianObs = sortedObs[Math.floor(sortedObs.length / 2)] || 0;
+        while (data.systemByDate.length > 1 && data.systemByDate[0].observations < medianObs * 0.25) {
+          data.systemByDate.shift();
+        }
+        data.overall.startDate = data.systemByDate[0].snapshot_date;
+
+        const sys = systemAggregates(data);
+        document.querySelector("#barDates").textContent =
+          `${fmtDateLong(data.overall.startDate)} – ${fmtDateLong(data.overall.endDate)}, ${data.overall.endDate.slice(0, 4)}`;
+
+        const liveRef = { current: live };
+        const atlas = atlasModule(data, liveRef, sys);
+        const report = reportModule(data, live, sys);
+        const planner = plannerModule(data, liveRef, atlas);
+
+        const atlasRoot = document.querySelector("#atlasRoot");
+        const reportRoot = document.querySelector("#reportRoot");
+
+        function setView(name) {
+          document.body.dataset.view = name;
+          atlasRoot.hidden = name === "report";
+          reportRoot.hidden = name !== "report";
+          for (const btn of document.querySelectorAll(".bar-nav button")) {
+            if (btn.dataset.view === name) btn.setAttribute("aria-current", "page");
+            else btn.removeAttribute("aria-current");
+          }
+          try { localStorage.setItem("grt-site-view", name); } catch { /* private mode */ }
+          if (name === "planner") planner.activate();
+          else planner.deactivate();
+          if (name === "report") report.onShow();
+          else requestAnimationFrame(() => atlas.redraw());
+        }
+
+        for (const btn of document.querySelectorAll(".bar-nav button")) {
+          btn.addEventListener("click", () => setView(btn.dataset.view));
+        }
+
+        /* keep vehicle positions current while the page is open */
+        window.setInterval(async () => {
+          try {
+            const response = await fetch(`data/live-predictions.json?t=${Date.now()}`, { cache: "no-store" });
+            if (response.ok) {
+              liveRef.current = await response.json();
+              if (!atlasRoot.hidden) atlas.redraw();
+            }
+          } catch { /* keep the last snapshot */ }
+        }, 60000);
+
+        let saved = null;
+        try { saved = localStorage.getItem("grt-site-view"); } catch { /* private mode */ }
+        setView(["report", "planner"].includes(saved) ? saved : "atlas");
+      }
+
+      boot();
+    </script>
   </body>
 </html>

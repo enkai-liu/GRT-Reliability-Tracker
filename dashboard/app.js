@@ -71,10 +71,10 @@ function number(value) {
 }
 
 function reliabilityColor(onTimeRate) {
-  if (onTimeRate >= 0.95) return "#15845f";
-  if (onTimeRate >= 0.9) return "#2e86ab";
-  if (onTimeRate >= 0.85) return "#d88a1d";
-  return "#c43d4b";
+  if (onTimeRate >= 0.95) return "#38c78d";
+  if (onTimeRate >= 0.9) return "#4fa3dd";
+  if (onTimeRate >= 0.85) return "#eda63a";
+  return "#ef5d6c";
 }
 
 function routeLabel(route) {
@@ -430,7 +430,8 @@ function renderDetail() {
     els.selectedMode.textContent = "System";
     els.selectedTitle.textContent = "All lines";
     els.routeBadge.textContent = "--";
-    els.routeBadge.style.background = "#1c2528";
+    els.routeBadge.style.background = "var(--panel-raised)";
+    els.routeBadge.style.color = "var(--muted)";
     els.routeMode.textContent = "Select a line";
     els.routeTitle.textContent = "System overview";
     els.routeOnTime.textContent = els.systemOnTime.textContent;
@@ -448,6 +449,7 @@ function renderDetail() {
   els.selectedTitle.textContent = stop ? stop.stop_name : `Route ${routeLabel(route)}`;
   els.routeBadge.textContent = routeLabel(route);
   els.routeBadge.style.background = color;
+  els.routeBadge.style.color = "";
   els.routeMode.textContent = stop
     ? `${route.transit_mode.toUpperCase()} route ${routeLabel(route)} · direction ${stop.direction_id}`
     : `${route.transit_mode.toUpperCase()} line`;

@@ -19,6 +19,7 @@ Outputs (under data/analysis/transfers/):
 """
 
 import argparse
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -185,8 +186,13 @@ def write_events(con, output_root, snapshot_date, overwrite):
     return output_path
 
 
-def build_summaries(con, output_root, min_observations):
+def iso_date(value):
+    return date.fromisoformat(value).isoformat()
+
+
+def build_summaries(con, output_root, min_observations, start_date=None):
     events_glob = f"{output_root}/events/date=*/part-000.parquet"
+    date_filter = f"WHERE snapshot_date >= DATE '{start_date}'" if start_date else ""
 
     con.sql(f"""
     CREATE OR REPLACE TABLE stop_summary AS
@@ -212,6 +218,7 @@ def build_summaries(con, output_root, min_observations):
         quantile_cont(actual_margin_seconds, 0.10) AS p10_margin_seconds,
         count(DISTINCT snapshot_date) AS days_observed
     FROM read_parquet('{events_glob}', hive_partitioning=true)
+    {date_filter}
     GROUP BY from_mode, from_route_id, from_direction_id,
              to_mode, to_route_id, to_direction_id, from_stop_id, to_stop_id
     HAVING count(*) >= {min_observations}
@@ -235,6 +242,7 @@ def build_summaries(con, output_root, min_observations):
         median(actual_margin_seconds) AS median_margin_seconds,
         count(DISTINCT snapshot_date) AS days_observed
     FROM read_parquet('{events_glob}', hive_partitioning=true)
+    {date_filter}
     GROUP BY from_mode, from_route_id, to_mode, to_route_id, from_stop_name
     HAVING count(*) >= {min_observations}
     ORDER BY success_rate, attempts DESC
@@ -269,6 +277,8 @@ def parse_args():
                         help="Output directory for transfer events and summaries.")
     parser.add_argument("--date", action="append",
                         help="Date to process in YYYY-MM-DD form. May be repeated. Defaults to all.")
+    parser.add_argument("--start-date", type=iso_date,
+                        help="Exclude connection events before this date (YYYY-MM-DD).")
     parser.add_argument("--max-walk-m", type=float, default=150.0,
                         help="Maximum walking distance between transfer stops in metres.")
     parser.add_argument("--max-wait-minutes", type=int, default=30,
@@ -290,6 +300,8 @@ def main():
 
     if not args.summaries_only:
         dates = args.date if args.date else discover_dates(delay_root)
+        if args.start_date:
+            dates = [d for d in dates if d >= args.start_date]
         if not dates:
             print(f"No dates found under {delay_root}")
             raise SystemExit(1)
@@ -312,12 +324,14 @@ def main():
     con = duckdb.connect()
     con.sql("SET timezone = 'UTC'")
     print("\nBuilding summaries...")
-    build_summaries(con, output_root, args.min_observations)
+    build_summaries(con, output_root, args.min_observations, args.start_date)
 
+    stats_filter = f"WHERE snapshot_date >= DATE '{args.start_date}'" if args.start_date else ""
     stats = con.sql(f"""
         SELECT count(*), avg(CASE WHEN made_transfer THEN 1.0 ELSE 0.0 END),
                median(actual_margin_seconds)
         FROM read_parquet('{output_root}/events/date=*/part-000.parquet', hive_partitioning=true)
+        {stats_filter}
     """).fetchone()
     print(f"\nOverall: {stats[0]} proposed connections, "
           f"{stats[1]*100:.1f}% made, median margin {stats[2]:.0f}s")

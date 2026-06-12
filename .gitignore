@@ -32,3 +32,7 @@ dashboard/data/**
 .DS_Store
 .vscode/
 .idea/
+
+# Local Claude Code tooling
+.claude/
+CLAUDE.local.md

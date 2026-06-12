@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -11,6 +12,10 @@ DEFAULT_RELIABILITY_ROOT = PROJECT_ROOT / "data" / "analysis" / "reliability"
 DEFAULT_TRANSFERS_ROOT = PROJECT_ROOT / "data" / "analysis" / "transfers"
 DEFAULT_STATIC_ROOT = PROJECT_ROOT / "data" / "parsed_static_gtfs"
 DEFAULT_OUTPUT = PROJECT_ROOT / "dashboard" / "data" / "dashboard-data.json"
+
+
+def iso_date(value):
+    return date.fromisoformat(value).isoformat()
 
 
 def route_key(mode, route_id):
@@ -57,13 +62,20 @@ def build_transfers_payload(con, transfers_root):
     return {"byRoute": by_route, "worst": worst}
 
 
-def build_dashboard_payload(reliability_root, transfers_root, static_root):
+def build_dashboard_payload(reliability_root, transfers_root, static_root, start_date=None):
     con = duckdb.connect()
     con.sql("SET timezone = 'UTC'")
+
+    # Note: this only trims the daily series and overall stats. The route,
+    # hour, and stop summaries are pre-aggregated; rebuild them with
+    # build_reliability_tables.py --start-date for a fully filtered export.
+    # snapshot_date is stored as an ISO string, so string comparison is safe
+    date_filter = f"WHERE snapshot_date >= '{start_date}'" if start_date else ""
 
     system_by_date = fetch_dicts(con, f"""
         SELECT *
         FROM read_parquet('{reliability_root}/system_by_date.parquet')
+        {date_filter}
         ORDER BY snapshot_date
     """)
 
@@ -158,6 +170,7 @@ def build_dashboard_payload(reliability_root, transfers_root, static_root):
             median(median_delay_seconds) AS median_daily_delay_seconds,
             quantile_cont(p90_delay_seconds, 0.90) AS p90_daily_p90_delay_seconds
         FROM read_parquet('{reliability_root}/system_by_date.parquet')
+        {date_filter}
     """).fetchone()
 
     return {
@@ -189,13 +202,23 @@ def parse_args():
     parser.add_argument("--transfers-root", type=Path, default=DEFAULT_TRANSFERS_ROOT)
     parser.add_argument("--static-root", type=Path, default=DEFAULT_STATIC_ROOT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--start-date",
+        type=iso_date,
+        help="Exclude daily-series rows before this date (YYYY-MM-DD). Route-level "
+        "tables are pre-aggregated; rebuild them with build_reliability_tables.py "
+        "--start-date for a fully filtered export.",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     payload = build_dashboard_payload(
-        args.reliability_root.resolve(), args.transfers_root.resolve(), args.static_root.resolve()
+        args.reliability_root.resolve(),
+        args.transfers_root.resolve(),
+        args.static_root.resolve(),
+        args.start_date,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")

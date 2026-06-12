@@ -20,6 +20,7 @@ Outputs under data/analysis/reliability by default:
 """
 
 import argparse
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -29,14 +30,22 @@ DEFAULT_FEATURES_ROOT = PROJECT_ROOT / "data" / "analysis" / "features"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "data" / "analysis" / "reliability"
 
 
+def iso_date(value):
+    return date.fromisoformat(value).isoformat()
+
+
 def sql_list(values):
     return ", ".join(f"'{value}'" for value in values)
 
 
-def create_base_view(con, features_root, dates, max_abs_delay_seconds):
-    date_filter = ""
+def create_base_view(con, features_root, dates, max_abs_delay_seconds, start_date=None):
+    filters = []
     if dates:
-        date_filter = f"AND snapshot_date IN ({sql_list(dates)})"
+        filters.append(f"AND snapshot_date IN ({sql_list(dates)})")
+    if start_date:
+        # snapshot_date is stored as an ISO string, so string comparison is safe
+        filters.append(f"AND snapshot_date >= '{start_date}'")
+    date_filter = "\n          ".join(filters)
 
     con.sql(f"""
         CREATE OR REPLACE VIEW reliability_base AS
@@ -382,6 +391,11 @@ def parse_args():
         help="Date to include in YYYY-MM-DD form. May be repeated. Defaults to all dates.",
     )
     parser.add_argument(
+        "--start-date",
+        type=iso_date,
+        help="Exclude observations before this date (YYYY-MM-DD), e.g. to drop a partial first collection day.",
+    )
+    parser.add_argument(
         "--max-abs-delay-seconds",
         type=int,
         default=3600,
@@ -405,7 +419,7 @@ def main():
     con = duckdb.connect()
     con.sql("SET timezone = 'UTC'")
 
-    create_base_view(con, features_root, args.date, args.max_abs_delay_seconds)
+    create_base_view(con, features_root, args.date, args.max_abs_delay_seconds, args.start_date)
     observations = con.sql("SELECT count(*) FROM reliability_base").fetchone()[0]
     if observations == 0:
         print("No feature rows found for reliability tables.")

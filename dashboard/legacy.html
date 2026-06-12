@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GRT Reliability Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Route controls">
+        <header class="brand">
+          <div>
+            <p class="eyebrow">Grand River Transit</p>
+            <h1>Reliability</h1>
+          </div>
+          <div class="date-range" id="dateRange">Loading</div>
+        </header>
+
+        <section class="metrics-grid" aria-label="System summary">
+          <article>
+            <span>On-time</span>
+            <strong id="systemOnTime">--</strong>
+          </article>
+          <article>
+            <span>Median</span>
+            <strong id="systemMedian">--</strong>
+          </article>
+          <article>
+            <span>P90</span>
+            <strong id="systemP90">--</strong>
+          </article>
+          <article>
+            <span>Routes</span>
+            <strong id="systemRoutes">--</strong>
+          </article>
+        </section>
+
+        <section class="controls" aria-label="Filters">
+          <label class="search">
+            <span>Search routes</span>
+            <input id="routeSearch" type="search" placeholder="Route, mode, reliability">
+          </label>
+          <div class="segmented" role="group" aria-label="Mode filter">
+            <button class="active" data-mode="all" type="button">All</button>
+            <button data-mode="bus" type="button">Bus</button>
+            <button data-mode="lrt" type="button">LRT</button>
+          </div>
+          <label class="select-label">
+            <span>Sort by</span>
+            <select id="sortRoutes">
+              <option value="on_time_asc">Lowest on-time</option>
+              <option value="on_time_desc">Highest on-time</option>
+              <option value="p90_desc">Highest P90 delay</option>
+              <option value="observations_desc">Most observations</option>
+              <option value="route_asc">Route number</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="route-list-wrap" aria-label="Routes">
+          <div class="list-heading">
+            <span>Lines</span>
+            <span id="routeCount">0</span>
+          </div>
+          <div class="route-list" id="routeList"></div>
+        </section>
+      </aside>
+
+      <section class="map-stage" aria-label="Route map">
+        <div class="map-toolbar">
+          <div class="selected-summary">
+            <span id="selectedMode">System</span>
+            <strong id="selectedTitle">All lines</strong>
+          </div>
+          <div class="map-actions" aria-label="Map zoom controls">
+            <button id="zoomOut" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+            <button id="zoomReset" type="button" title="Reset map" aria-label="Reset map">⌂</button>
+            <button id="zoomIn" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+          </div>
+          <div class="legend" aria-label="Reliability color scale">
+            <span><i class="good"></i> 95%+</span>
+            <span><i class="ok"></i> 90-95%</span>
+            <span><i class="watch"></i> 85-90%</span>
+            <span><i class="poor"></i> Under 85%</span>
+          </div>
+        </div>
+        <svg id="networkMap" class="network-map" role="img" aria-label="GRT route reliability map"></svg>
+      </section>
+
+      <aside class="detail-panel" aria-label="Selected route details">
+        <section class="route-hero">
+          <div class="route-badge" id="routeBadge">--</div>
+          <div>
+            <p id="routeMode">Select a line</p>
+            <h2 id="routeTitle">System overview</h2>
+          </div>
+        </section>
+
+        <section class="detail-metrics">
+          <article>
+            <span>On-time</span>
+            <strong id="routeOnTime">--</strong>
+          </article>
+          <article>
+            <span>Late</span>
+            <strong id="routeLate">--</strong>
+          </article>
+          <article>
+            <span>Median</span>
+            <strong id="routeMedian">--</strong>
+          </article>
+          <article>
+            <span>P90</span>
+            <strong id="routeP90">--</strong>
+          </article>
+        </section>
+
+        <section class="live-section" id="liveSection" hidden>
+          <div class="section-title">
+            <h3><span class="live-dot" aria-hidden="true"></span>Live</h3>
+            <span id="liveUpdated">--</span>
+          </div>
+          <div class="live-summary" id="liveSummary"></div>
+          <div class="live-arrivals" id="liveArrivals"></div>
+        </section>
+
+        <section>
+          <div class="section-title">
+            <h3>Line Profile</h3>
+            <span>On-time by hour</span>
+          </div>
+          <div class="hour-chart" id="hourChart"></div>
+        </section>
+
+        <section id="transferSection" hidden>
+          <div class="section-title">
+            <h3>Transfers</h3>
+            <span id="transferSubtitle">Riskiest connections</span>
+          </div>
+          <div class="transfer-table" id="transferTable"></div>
+        </section>
+
+        <section>
+          <div class="section-title">
+            <h3>Stations / Stops</h3>
+            <span id="stopCount">0 stops</span>
+          </div>
+          <div class="stop-table" id="stopTable"></div>
+        </section>
+      </aside>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

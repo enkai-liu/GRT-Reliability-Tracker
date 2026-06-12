@@ -1,8 +1,12 @@
 # Reliability Dashboard
 
-Static frontend for exploring GRT reliability summaries.
+Static frontend for exploring GRT reliability summaries — "The Reliability
+Atlas". Self-contained in `index.html` (no separate CSS/JS).
 
-![Line drilldown view](dashboard-line-drilldown.png)
+Other pages kept for reference:
+
+- `legacy.html` — the previous dashboard (uses `styles.css` + `app.js`)
+- `redesign.html` — the A/B design prototype the current site grew out of
 
 ## Build Data
 
@@ -11,6 +15,17 @@ Generate reliability tables first, then export dashboard JSON:
 ```bash
 collector/.venv/bin/python analysis/build_reliability_tables.py
 collector/.venv/bin/python analysis/export_dashboard_data.py
+collector/.venv/bin/python analysis/export_timetable.py   # trip planner timetable (defaults to today)
+```
+
+Both scripts (and `analysis/build_transfer_reliability.py`) accept
+`--start-date YYYY-MM-DD` to exclude earlier days — used to drop the partial
+first collection day (May 13, 2026), e.g.:
+
+```bash
+collector/.venv/bin/python analysis/build_reliability_tables.py --start-date 2026-05-14
+collector/.venv/bin/python analysis/build_transfer_reliability.py --summaries-only --start-date 2026-05-14
+collector/.venv/bin/python analysis/export_dashboard_data.py --start-date 2026-05-14
 ```
 
 The exporter writes `dashboard/data/dashboard-data.json`. That file is generated
@@ -26,20 +41,45 @@ Open `http://127.0.0.1:8765/`.
 
 ## UI
 
-- Route reliability map built from latest static GTFS shapes
-- Route search, mode filter, and sorting
-- Click routes from the map or list
-- Selecting a route swaps the map for a line diagram with one rail per
-  direction; click a station dot (or a row in the stop table) to drill into
-  stop-level metrics
-- Mouse wheel or trackpad to zoom
-- Drag to pan
-- Use `-`, home, and `+` buttons to zoom out, reset, and zoom in
-- Live panel with model-predicted delays for upcoming arrivals (system-wide
-  and per route), refreshed every minute
-- Transfers panel with historical connection success rates: riskiest
-  connections system-wide, or connections from the selected route; click a
-  row to jump to the destination route
+Three views under one top bar (choice persists in `localStorage`):
+
+**Atlas** — the map instrument:
+
+- Full-bleed network map from latest static GTFS shapes, colored by on-time
+  rate; every route is clickable (wide hit areas) and keyboard-focusable,
+  with a thicken-and-glow hover highlight
+- Mouse wheel / trackpad to zoom, drag to pan, `-` / `⌖` / `+` buttons
+- Route rail with system stats, search, and mode filter
+- Clicking a route (map or rail) opens a detail card: metrics, live
+  predicted delays, on-time by hour, riskiest connections, and the full
+  stop list; `Esc` or `✕` closes it
+- Selecting a route shows the live positions of its vehicles on the map
+  (refreshed every minute, colored by predicted delay; shown only while
+  the live scorer's data is fresh)
+
+**Planner** — the reliability-aware trip planner:
+
+- Pure RAPTOR router (`planner.js`, no DOM dependencies — portable to a
+  server runtime unchanged) over `data/timetable.json`, exported per service
+  day by `analysis/export_timetable.py`
+- Origin/destination by clicking the map (A then B) or stop-name search;
+  departure time defaults to now
+- Itineraries ranked by predicted p90 arrival plus a missed-connection
+  penalty — not just scheduled time; each transfer shows its observed
+  make-rate (or an estimate from slack vs. the incoming route's delays)
+- Fresh live predictions shift near-term legs and flag them in the results
+- The chosen itinerary is drawn on the map with walk legs dashed
+
+**Field Report** — the editorial analysis page:
+
+- Headline on-time stat and system summary
+- "Field notes" — written insights whose figures auto-fill from the data
+  (`data-fact` spans); edit the commentary placeholders in `index.html`
+  (search for `FIELD-NOTES`)
+- Daily on-time trend chart with weekend shading and hover tooltips
+- Live conditions strip with the hardest-hit upcoming arrivals
+- League table of every route (filter, sort, click to expand a drill-down)
+- Riskiest transfer connections system-wide
 
 ## Live Predictions
 

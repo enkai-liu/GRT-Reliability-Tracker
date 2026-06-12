@@ -552,6 +552,7 @@ def summarize(meta_rows, predictions, now, model_path):
     routes = {}
     arrivals = []
     trips = set()
+    vehicles = {}
 
     for row, predicted in zip(meta_rows, predictions):
         mode = row["transit_mode"]
@@ -592,6 +593,26 @@ def summarize(meta_rows, predictions, now, model_path):
             "feed_delay_seconds": round(row["current_predicted_delay_seconds"]),
         })
 
+        # one map marker per trip, described by its next upcoming arrival
+        vlat = row.get("vehicle_lat")
+        vlon = row.get("vehicle_lon")
+        if vlat is not None and vlon is not None:
+            current = vehicles.get(row["trip_id"])
+            if current is None or row["prediction_lead_minutes"] < current["_lead_minutes"]:
+                vehicles[row["trip_id"]] = {
+                    "_lead_minutes": row["prediction_lead_minutes"],
+                    "routeKey": key,
+                    "transit_mode": mode,
+                    "route_short_name": row["route_short_name"] or row["route_id"],
+                    "trip_headsign": row["trip_headsign"],
+                    "direction_id": row["direction_id"],
+                    "lat": round(float(vlat), 6),
+                    "lon": round(float(vlon), 6),
+                    "next_stop_name": row["stop_name"],
+                    "next_stop_eta_minutes": round(row["prediction_lead_minutes"], 1),
+                    "predicted_delay_seconds": round(float(predicted)),
+                }
+
     route_list = []
     for entry in sorted(routes.values(), key=lambda e: -(e["sum_predicted"] / e["arrivals"])):
         route_list.append({
@@ -609,6 +630,13 @@ def summarize(meta_rows, predictions, now, model_path):
 
     arrivals.sort(key=lambda a: -a["predicted_delay_seconds"])
 
+    vehicle_list = []
+    for entry in vehicles.values():
+        entry = dict(entry)
+        entry.pop("_lead_minutes")
+        vehicle_list.append(entry)
+    vehicle_list.sort(key=lambda v: (v["routeKey"], v["trip_headsign"] or ""))
+
     return {
         "generatedAtUtc": now.isoformat(),
         "model": str(model_path),
@@ -619,6 +647,7 @@ def summarize(meta_rows, predictions, now, model_path):
             "routes": len(route_list),
         },
         "routes": route_list,
+        "vehicles": vehicle_list,
         "worstArrivals": arrivals[:40],
     }
 
