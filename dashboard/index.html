@@ -67,7 +67,7 @@
         </section>
       </aside>
 
-      <section class="map-stage" aria-label="System map">
+      <section class="map-stage" aria-label="Route map">
         <div class="map-toolbar">
           <div class="selected-summary">
             <span id="selectedMode">System</span>
@@ -116,17 +116,34 @@
           </article>
         </section>
 
-        <section>
+        <section class="live-section" id="liveSection" hidden>
           <div class="section-title">
-            <h3>Hourly Profile</h3>
-            <span>On-time rate</span>
+            <h3><span class="live-dot" aria-hidden="true"></span>Live</h3>
+            <span id="liveUpdated">--</span>
           </div>
-          <div class="hour-chart" id="hourChart"></div>
+          <div class="live-summary" id="liveSummary"></div>
+          <div class="live-arrivals" id="liveArrivals"></div>
         </section>
 
         <section>
           <div class="section-title">
-            <h3>Stops Needing Attention</h3>
+            <h3>Line Profile</h3>
+            <span>On-time by hour</span>
+          </div>
+          <div class="hour-chart" id="hourChart"></div>
+        </section>
+
+        <section id="transferSection" hidden>
+          <div class="section-title">
+            <h3>Transfers</h3>
+            <span id="transferSubtitle">Riskiest connections</span>
+          </div>
+          <div class="transfer-table" id="transferTable"></div>
+        </section>
+
+        <section>
+          <div class="section-title">
+            <h3>Stations / Stops</h3>
             <span id="stopCount">0 stops</span>
           </div>
           <div class="stop-table" id="stopTable"></div>

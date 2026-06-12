@@ -8,6 +8,7 @@ import duckdb
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RELIABILITY_ROOT = PROJECT_ROOT / "data" / "analysis" / "reliability"
+DEFAULT_TRANSFERS_ROOT = PROJECT_ROOT / "data" / "analysis" / "transfers"
 DEFAULT_STATIC_ROOT = PROJECT_ROOT / "data" / "parsed_static_gtfs"
 DEFAULT_OUTPUT = PROJECT_ROOT / "dashboard" / "data" / "dashboard-data.json"
 
@@ -22,7 +23,41 @@ def fetch_dicts(con, query):
     return [dict(zip(cols, row)) for row in relation.fetchall()]
 
 
-def build_dashboard_payload(reliability_root, static_root):
+def build_transfers_payload(con, transfers_root):
+    """Transfer reliability summaries, when build_transfer_reliability.py has run."""
+    route_pairs_path = transfers_root / "transfer_route_pairs.parquet"
+    if not route_pairs_path.exists():
+        return {"byRoute": {}, "worst": []}
+
+    items = fetch_dicts(con, f"""
+        SELECT
+            from_mode, from_route_id, to_mode, to_route_id, transfer_stop_name,
+            attempts, success_rate,
+            median_scheduled_wait_seconds, median_margin_seconds, days_observed
+        FROM read_parquet('{route_pairs_path}')
+        ORDER BY attempts DESC
+    """)
+
+    by_route = {}
+    for item in items:
+        item["fromKey"] = route_key(item["from_mode"], item["from_route_id"])
+        item["toKey"] = route_key(item["to_mode"], item["to_route_id"])
+        by_route.setdefault(item["fromKey"], []).append(item)
+
+    # Keep the busiest connections per route so the payload stays small.
+    for key, rows in by_route.items():
+        rows.sort(key=lambda r: r["attempts"], reverse=True)
+        by_route[key] = rows[:20]
+
+    worst = sorted(
+        (item for item in items if item["attempts"] >= 100),
+        key=lambda r: r["success_rate"],
+    )[:20]
+
+    return {"byRoute": by_route, "worst": worst}
+
+
+def build_dashboard_payload(reliability_root, transfers_root, static_root):
     con = duckdb.connect()
     con.sql("SET timezone = 'UTC'")
 
@@ -144,12 +179,14 @@ def build_dashboard_payload(reliability_root, static_root):
         "routeByHour": route_by_hour,
         "routeStops": route_stops,
         "routeShapes": route_shape_list,
+        "transfers": build_transfers_payload(con, transfers_root),
     }
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Export JSON data for the static dashboard.")
     parser.add_argument("--reliability-root", type=Path, default=DEFAULT_RELIABILITY_ROOT)
+    parser.add_argument("--transfers-root", type=Path, default=DEFAULT_TRANSFERS_ROOT)
     parser.add_argument("--static-root", type=Path, default=DEFAULT_STATIC_ROOT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
@@ -157,7 +194,9 @@ def parse_args():
 
 def main():
     args = parse_args()
-    payload = build_dashboard_payload(args.reliability_root.resolve(), args.static_root.resolve())
+    payload = build_dashboard_payload(
+        args.reliability_root.resolve(), args.transfers_root.resolve(), args.static_root.resolve()
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     print(f"Wrote {args.output} ({len(payload['routes'])} routes)")

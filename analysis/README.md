@@ -69,3 +69,61 @@ snapshot-history and vehicle-position features.
 `--late-delay-weight` increases the training/evaluation weight for rows where
 the final delay is above `--late-delay-threshold-seconds`, which defaults to
 300 seconds.
+
+### Live Scoring
+
+`predict_live.py` serves the trained model against the current GTFS-RT feeds:
+
+```bash
+collector/.venv/bin/python analysis/predict_live.py                        # one cycle
+collector/.venv/bin/python analysis/predict_live.py --interval-seconds 300 # continuous
+```
+
+Each cycle fetches trip updates and vehicle positions directly from the GRT
+API into a rolling history under `data/live/raw`, rebuilds the training
+features over a 90-minute window (10-minute snapshot stride, matching the
+trained model), scores the newest snapshot, and writes:
+
+- `dashboard/data/live-predictions.json` — per-route summaries and the worst
+  upcoming arrivals, loaded by the dashboard's live panel.
+- `data/live/predictions_log/date=YYYY-MM-DD/run-TIMESTAMP.parquet` — full
+  scored rows for later evaluation against observed delays.
+
+Notes:
+
+- Snapshot-history lag features start out null on a cold start; predictions
+  are most faithful to training once the scorer has been running for an hour.
+- `--stride-minutes` must match the `--snapshot-stride-minutes` used to build
+  the training features.
+- Static GTFS joins use the latest snapshot under `data/parsed_static_gtfs`.
+  If GRT has published a new schedule since, refresh it first:
+  `collector/.venv/bin/python collector/parse_static_gtfs.py --sync-from-gcs --gcs-bucket grt-reliability-raw-data --date <today>`.
+- Categorical features are encoded with DuckDB's `hash(...) % 100000`, exactly
+  as in `train_model.py`; both scripts must run with the same DuckDB version.
+
+## Transfer Reliability
+
+`build_transfer_reliability.py` measures how often connections between routes
+actually work:
+
+```bash
+collector/.venv/bin/python analysis/build_transfer_reliability.py --overwrite
+collector/.venv/bin/python analysis/export_dashboard_data.py   # include in dashboard
+```
+
+For each observed arrival it proposes the connection a trip planner would: the
+first scheduled departure of every other route within walking distance
+(default 150 m, walk time at 1.2 m/s with a 30 s floor) departing within
+`--max-wait-minutes` (default 30). The transfer is "made" when that specific
+vehicle actually departed at or after the rider's actual arrival plus walk
+time, using the final pre-arrival GTFS-RT observations.
+
+Outputs under `data/analysis/transfers/`:
+
+- `events/date=YYYY-MM-DD/part-000.parquet` — one row per proposed connection
+- `transfer_stop_summary.parquet/.csv` — per route-pair and stop-pair
+- `transfer_route_pairs.parquet/.csv` — per route-pair at a named location
+
+Caveats: scheduled departures are approximated by scheduled arrivals (nearly
+always identical in GRT's schedule), and "actual" times are the feed's final
+pre-arrival predictions rather than ground-truth door closings.
