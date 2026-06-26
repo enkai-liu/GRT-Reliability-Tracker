@@ -239,8 +239,7 @@
       .at-line:hover .at-route,
       .at-line:focus-visible .at-route {
         opacity: 1;
-        stroke-width: calc(var(--w, 2.4px) * 1.8);
-        filter: drop-shadow(0 0 2px currentColor);
+        stroke-width: calc(var(--w, 2.4px) * 1.45);
       }
 
       .at-line.dim .at-route { opacity: 0.09; }
@@ -248,9 +247,10 @@
       .at-line.dim:hover .at-route,
       .at-line.dim:focus-visible .at-route { opacity: 0.85; }
 
+      /* no glow: the selected route reads via its thicker base width (set in
+         draw()) plus the other routes dimming to .at-line.dim */
       .at-line.sel .at-route {
         opacity: 1;
-        filter: drop-shadow(0 0 9px rgba(234, 232, 225, 0.25));
       }
 
       /* live vehicle markers, shown for the selected route */
@@ -2332,20 +2332,18 @@
           const f = state.map.fit;
           if (!f) return;
           const sc = state.map.scale;
-          const cx = state.map.w / 2, cy = state.map.h / 2;
-          const bcx = (f.box.x0 + f.box.x1) / 2, bcy = (f.box.y0 + f.box.y1) / 2;
-          /* Keep the view centre over the network at every zoom: any edge can be
-             dragged to the middle of the visible box, but the network can't be
-             dragged entirely out of view. The pixel range still scales with zoom
-             (more px per metre), yet the area you can reach is always the whole
-             network — the same region at any zoom. */
-          const axis = (b0, b1, c, bc, pan) => {
-            const lo = bc - c - (b1 - c) * sc;  // far edge (b1) at the box centre
-            const hi = bc - c - (b0 - c) * sc;  // near edge (b0) at the box centre
-            return Math.max(lo, Math.min(hi, pan));
+          /* Keep the network covering the visible box. At the minimum zoom (the
+             fit) the whole network is on screen, so panning locks — you see all
+             the draggable content and can't drag. Zoom in and you can pan to
+             reach any edge, but never past the network into empty space. */
+          const axis = (b0, b1, c, v0, v1, pan) => {
+            const lo = c + (b0 - c) * sc;
+            const hi = c + (b1 - c) * sc;
+            if (hi - lo <= v1 - v0) return (v0 + v1 - lo - hi) / 2; // fits the box -> centre, locked
+            return Math.max(v1 - hi, Math.min(v0 - lo, pan));       // overflows -> cover the box
           };
-          state.map.panX = axis(f.bx0, f.bx1, cx, bcx, state.map.panX);
-          state.map.panY = axis(f.by0, f.by1, cy, bcy, state.map.panY);
+          state.map.panX = axis(f.bx0, f.bx1, state.map.w / 2, f.box.x0, f.box.x1, state.map.panX);
+          state.map.panY = axis(f.by0, f.by1, state.map.h / 2, f.box.y0, f.box.y1, state.map.panY);
         }
 
         /* base (pre-zoom) coords — the basemap group is drawn once here and
@@ -2491,7 +2489,7 @@
           for (const route of data.routes) {
             const shapes = data.routeShapes[route.key] || [];
             const isSel = route.key === state.selected;
-            const base = route.transit_mode === "lrt" ? 6 : isSel ? 4.6 : 2.4;
+            const base = isSel ? 4.6 : route.transit_mode === "lrt" ? 3.4 : 2.4;
             const width = base / Math.sqrt(state.map.scale);
             const color = relHex(route.on_time_rate);
 
