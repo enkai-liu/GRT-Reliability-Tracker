@@ -16,6 +16,7 @@ Generate reliability tables first, then export dashboard JSON:
 collector/.venv/bin/python analysis/build_reliability_tables.py
 collector/.venv/bin/python analysis/export_dashboard_data.py
 collector/.venv/bin/python analysis/export_timetable.py   # trip planner timetable (defaults to today)
+collector/.venv/bin/python analysis/build_basemap.py      # geographic basemap (one-off; see Basemap)
 ```
 
 Both scripts (and `analysis/build_transfer_reliability.py`) accept
@@ -91,6 +92,23 @@ collector/.venv/bin/python analysis/predict_live.py --interval-seconds 300
 
 The panel hides itself when the file is missing and shows a "stale" badge when
 the last scoring run is more than 10 minutes old.
+
+## Basemap
+
+The Atlas/Planner map draws a faint geographic basemap (water, the Grand &
+Speed rivers, major roads, and the Region of Waterloo boundary) *under* the
+colored routes, using the same projection so everything aligns. It reads
+`data/basemap.json`, built once from OpenStreetMap:
+
+```bash
+collector/.venv/bin/python analysis/build_basemap.py
+```
+
+The script caches raw Overpass responses under `data/basemap_cache/` (gitignored)
+so re-runs and filter tweaks don't re-hit the network. The map falls back to the
+plain survey grid if `basemap.json` is missing. The projection is
+cosine-latitude corrected and fits the network to the visible map area (the gap
+beside the rail / planner panel), so the network keeps true proportions.
 
 ## Transfers
 

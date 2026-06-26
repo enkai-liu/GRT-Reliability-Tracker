@@ -189,6 +189,38 @@
         pointer-events: none;
       }
 
+      /* geographic basemap (OSM-derived), drawn faintly under the routes so it
+         grounds the network without competing with the reliability colors */
+      .bm-layer path { pointer-events: none; }
+      .bm-water {
+        fill: rgba(66, 116, 170, 0.13);
+        stroke: rgba(96, 152, 208, 0.16);
+        stroke-width: 0.6;
+        vector-effect: non-scaling-stroke;
+      }
+      .bm-river {
+        fill: none;
+        stroke: rgba(91, 168, 232, 0.26);
+        stroke-width: 1.1;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+      }
+      .bm-road {
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+      }
+      .bm-arterial { stroke: rgba(234, 232, 225, 0.075); stroke-width: 0.7; }
+      .bm-highway { stroke: rgba(234, 232, 225, 0.17); stroke-width: 1.3; }
+      .bm-bound {
+        fill: none;
+        vector-effect: non-scaling-stroke;
+      }
+      .bm-region { stroke: rgba(146, 152, 162, 0.34); stroke-width: 1; stroke-dasharray: 5 4; }
+      .bm-municipal { stroke: rgba(146, 152, 162, 0.13); stroke-width: 0.8; stroke-dasharray: 2 4; }
+
       .at-map.dragging { cursor: grabbing; }
 
       .at-line {
@@ -283,7 +315,16 @@
       body[data-view="planner"] .at-line .at-route { opacity: 0.3; }
       body[data-view="planner"] .at-map.has-itin .at-line .at-route { opacity: 0.08; }
 
-      .at-planner { left: 16px; width: 376px; display: none; }
+      /* sizes to its content (the form is short) and only grows — up to the
+         viewport — once an itinerary is planned, so it doesn't reserve a tall
+         empty void over the map */
+      .at-planner {
+        left: 16px;
+        width: 376px;
+        bottom: auto;
+        max-height: calc(100% - 32px);
+        display: none;
+      }
       body[data-view="planner"] .at-planner { display: flex; }
 
       .pl-scroll {
@@ -656,7 +697,7 @@
       }
 
       .at-railstats article {
-        padding: 10px 12px;
+        padding: 10px 8px;
         background: var(--surface);
       }
 
@@ -673,8 +714,9 @@
         display: block;
         margin-top: 4px;
         font-family: var(--mono);
-        font-size: 15px;
+        font-size: 13px;
         font-weight: 600;
+        white-space: nowrap;
       }
 
       .at-rail-head {
@@ -1293,22 +1335,6 @@
         font-size: 0.88em;
       }
 
-      .ld-note-edit {
-        max-width: 720px;
-        padding: 12px 16px;
-        border: 1px dashed var(--rule-strong);
-        border-radius: 9px;
-        color: var(--mut);
-        font-style: italic;
-        font-size: 15px;
-      }
-
-      .ld-note-edit code {
-        font-family: var(--mono);
-        font-size: 12px;
-        font-style: normal;
-      }
-
       /* trend chart */
       .ld-trendbox { position: relative; }
 
@@ -1352,6 +1378,23 @@
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
         gap: 12px;
         margin-top: 22px;
+      }
+
+      .ld-modelnote {
+        max-width: 720px;
+        margin-top: 20px;
+        padding-top: 14px;
+        border-top: 1px solid var(--rule);
+        color: var(--mut);
+        font-size: 13.5px;
+        text-wrap: pretty;
+      }
+
+      .ld-modelnote strong {
+        color: var(--text);
+        font-family: var(--mono);
+        font-weight: 600;
+        font-size: 0.9em;
       }
 
       .ld-arrival {
@@ -1933,8 +1976,9 @@
         </section>
 
         <!-- FIELD-NOTES: the <span data-fact="…"> values are filled from the data
-             automatically. Write your own analysis in the .ld-note-edit paragraphs
-             (replace the placeholder entirely, including the dashed style if you like). -->
+             automatically (see fillFacts). The following <p> in each .ld-note is
+             the author's commentary — edit the prose freely to match new data. -->
+
         <section class="ld-section ld-reveal" aria-label="Field notes">
           <span class="ld-label">Field notes</span>
           <h2>What the data keeps saying</h2>
@@ -1945,7 +1989,7 @@
             <p>System reliability bottoms out at <strong><span data-fact="worstHour"></span></strong>, when
               <strong><span data-fact="worstHourRate"></span></strong> of arrivals run on time — compared with
               <strong><span data-fact="bestHourRate"></span></strong> at <strong><span data-fact="bestHour"></span></strong>.</p>
-            <p class="ld-note-edit">Your commentary goes here — edit this paragraph in <code>index.html</code> (search for <code>FIELD-NOTES</code>).</p>
+            <p>The slump isn't one bad hour — it's accumulation. Reliability holds near 95% through the early morning, then erodes hour by hour as delay compounds across the network, bottoming out through the 3–5 p.m. peak before the evening lull lets vehicles recover. An afternoon trip is working against the system's worst stretch.</p>
           </article>
 
           <article class="ld-note">
@@ -1954,7 +1998,7 @@
               <strong><span data-fact="worstRouteRate"></span></strong> on-time across
               <strong><span data-fact="worstRouteObs"></span></strong> observed arrivals, with the worst tenth of them
               running <strong><span data-fact="worstRouteP90"></span></strong> or more behind schedule.</p>
-            <p class="ld-note-edit">Your commentary goes here.</p>
+            <p>That's about ten points below the system average, and no fluke at 37,000-plus arrivals. Half its trips still run within 76 seconds of schedule — the trouble isn't the typical trip but the tail, where the slowest tenth slip past five and a half minutes and quietly turn a planned connection into a missed one.</p>
           </article>
 
           <article class="ld-note">
@@ -1963,7 +2007,7 @@
               <strong><span data-fact="transferStop"></span></strong>: with only
               <strong><span data-fact="transferWait"></span></strong> of scheduled slack, riders make it just
               <strong><span data-fact="transferRate"></span></strong> of the time.</p>
-            <p class="ld-note-edit">Your commentary goes here.</p>
+            <p>Riders attempt it 1,398 times over the three weeks, and it lands on a coin flip. Even the catches that succeed clear by a median of just 12 seconds, so the schedule leaves no slack for Route 3's ordinary lateness — anything short of an on-time bus means waiting for the next train.</p>
           </article>
         </section>
 
@@ -1987,6 +2031,7 @@
           </div>
           <p class="ld-sub" id="ldLiveSub"></p>
           <div class="ld-arrivals" id="ldArrivals"></div>
+          <p class="ld-modelnote" id="ldModelNote" hidden></p>
         </section>
 
         <section class="ld-section ld-reveal" aria-label="Route rankings">
@@ -2187,7 +2232,7 @@
       /* ================================================================
          ATLAS VIEW
          ================================================================ */
-      function atlasModule(data, liveRef, sys) {
+      function atlasModule(data, liveRef, sys, basemap) {
         const root = document.querySelector("#atlasRoot");
         const svg = document.querySelector("#atMap");
         const listEl = document.querySelector("#atList");
@@ -2198,8 +2243,13 @@
           selected: null,
           mode: "all",
           search: "",
-          map: { w: 0, h: 0, scale: 1, panX: 0, panY: 0, dragging: false, sx: 0, sy: 0, px: 0, py: 0, moved: false },
+          map: { w: 0, h: 0, scale: 1, panX: 0, panY: 0, dragging: false, sx: 0, sy: 0, px: 0, py: 0, moved: false, fit: null },
         };
+
+        /* persistent basemap group: built once per fit (size/view change) in
+           base coords, then only its transform updates on pan/zoom */
+        let baseLayer = null;
+        let baseFitKey = null;
 
         let overlayFn = null;
         let mapClickFn = null;
@@ -2222,21 +2272,84 @@
           return [cx + (px - state.map.panX - cx) / state.map.scale, cy + (py - state.map.panY - cy) / state.map.scale];
         }
 
-        function project(lat, lon) {
-          const pad = 56;
+        /* The persistent per-view panel the network should clear, so it centers
+           in the visible gap (rail sits right in Atlas, planner panel left). The
+           transient detail card (left) is deliberately ignored so selecting a
+           route doesn't shift the map. */
+        function occludingPanel() {
+          if (document.body.dataset.view === "planner") return document.querySelector("#plannerPanel");
+          return document.querySelector(".at-rail");
+        }
+
+        /* Unoccluded map rectangle in viewBox units (before scale/pan). */
+        function fitBox() {
+          const pad = 44;
+          let x0 = pad, y0 = pad, x1 = state.map.w - pad, y1 = state.map.h - pad;
+          const panel = occludingPanel();
+          if (panel && panel.offsetParent) {
+            const sr = svg.getBoundingClientRect();
+            if (sr.width && sr.height) {
+              const sx = state.map.w / sr.width, sy = state.map.h / sr.height;
+              const left = (panel.getBoundingClientRect().left - sr.left) * sx;
+              const right = (panel.getBoundingClientRect().right - sr.left) * sx;
+              const top = (panel.getBoundingClientRect().top - sr.top) * sy;
+              const bottom = (panel.getBoundingClientRect().bottom - sr.top) * sy;
+              const overlaps = right > 0 && left < state.map.w && bottom > 0 && top < state.map.h;
+              const hCover = (Math.min(right, state.map.w) - Math.max(left, 0)) / state.map.w;
+              if (overlaps && hCover < 0.7) {
+                /* vertical side panel (rail right, planner left): reserve its
+                   column whatever its height, so the network doesn't shift when
+                   the planner grows with results */
+                if (left + right < state.map.w) x0 = Math.max(x0, right + pad);   // panel on the left
+                else x1 = Math.min(x1, left - pad);                              // panel on the right
+              } else if (overlaps) {
+                /* full-width sheet (mobile): reserve the top/bottom band */
+                if (top + bottom > state.map.h) y1 = Math.min(y1, top - pad);     // bottom sheet
+                else y0 = Math.max(y0, bottom + pad);                            // top sheet
+              }
+            }
+          }
+          if (x1 - x0 < 120) { x0 = pad; x1 = state.map.w - pad; }
+          if (y1 - y0 < 120) { y0 = pad; y1 = state.map.h - pad; }
+          return { x0, y0, x1, y1 };
+        }
+
+        /* Aspect-correct fit: longitude is compressed by cos(latitude) so the
+           network keeps true proportions, then scaled uniformly to fill the
+           visible box — no independent x/y stretch. */
+        function computeFit() {
           const { minLat, maxLat, minLon, maxLon } = data.bounds;
-          const bx = pad + ((lon - minLon) / (maxLon - minLon)) * (state.map.w - pad * 2);
-          const by = pad + ((maxLat - lat) / (maxLat - minLat)) * (state.map.h - pad * 2);
+          const cosLat = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+          const worldW = (maxLon - minLon) * cosLat;
+          const worldH = maxLat - minLat;
+          const box = fitBox();
+          const boxW = box.x1 - box.x0, boxH = box.y1 - box.y0;
+          const s = Math.min(boxW / worldW, boxH / worldH);
+          state.map.fit = {
+            s, cosLat, minLat, maxLat, minLon,
+            ox: box.x0 + (boxW - worldW * s) / 2,
+            oy: box.y0 + (boxH - worldH * s) / 2,
+          };
+        }
+
+        /* base (pre-zoom) coords — the basemap group is drawn once here and
+           pan/zoom is applied via an SVG transform on the group */
+        function projectBase(lat, lon) {
+          const f = state.map.fit;
+          return [f.ox + (lon - f.minLon) * f.cosLat * f.s, f.oy + (f.maxLat - lat) * f.s];
+        }
+
+        function project(lat, lon) {
+          const [bx, by] = projectBase(lat, lon);
           return transformPoint(bx, by);
         }
 
         function screenToGeo(px, py) {
-          const pad = 56;
-          const { minLat, maxLat, minLon, maxLon } = data.bounds;
+          const f = state.map.fit;
           const [bx, by] = inversePoint(px, py);
           return {
-            lon: minLon + ((bx - pad) / (state.map.w - pad * 2)) * (maxLon - minLon),
-            lat: maxLat - ((by - pad) / (state.map.h - pad * 2)) * (maxLat - minLat),
+            lon: f.minLon + (bx - f.ox) / (f.cosLat * f.s),
+            lat: f.maxLat - (by - f.oy) / f.s,
           };
         }
 
@@ -2286,20 +2399,76 @@
             .join(" ");
         }
 
+        /* base-coord path string (no pan/zoom — the group transform applies it) */
+        function basePath(points, closed) {
+          let d = "";
+          for (let i = 0; i < points.length; i++) {
+            const [x, y] = projectBase(points[i][0], points[i][1]);
+            d += `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+          }
+          return closed ? d + "Z" : d;
+        }
+
+        /* Build the geographic basemap once into `baseLayer` (water, rivers,
+           roads, region/municipal boundaries), all under the colored routes. */
+        function buildBasemap() {
+          baseLayer.textContent = "";
+          const add = (cls, lines, closed) => {
+            for (const pts of lines) {
+              if (pts.length < 2) continue;
+              const p = document.createElementNS(SVG_NS, "path");
+              p.setAttribute("class", cls);
+              p.setAttribute("d", basePath(pts, closed));
+              baseLayer.append(p);
+            }
+          };
+          add("bm-water", basemap.water || [], true);
+          add("bm-river", basemap.rivers || [], false);
+          add("bm-road bm-arterial", basemap.roads?.arterial || [], false);
+          add("bm-road bm-highway", basemap.roads?.highway || [], false);
+          add("bm-bound bm-municipal", basemap.boundary?.municipal || [], false);
+          add("bm-bound bm-region", basemap.boundary?.region || [], false);
+        }
+
+        function syncBasemap() {
+          if (!basemap) return;
+          if (!baseLayer) {
+            baseLayer = document.createElementNS(SVG_NS, "g");
+            baseLayer.setAttribute("class", "bm-layer");
+          }
+          if (baseLayer.parentNode !== svg) svg.prepend(baseLayer);
+          const f = state.map.fit;
+          const key = `${state.map.w}x${state.map.h}|${f.s.toFixed(5)}|${f.ox.toFixed(1)}|${f.oy.toFixed(1)}`;
+          if (key !== baseFitKey) {
+            buildBasemap();
+            baseFitKey = key;
+          }
+          const sc = state.map.scale, cx = state.map.w / 2, cy = state.map.h / 2;
+          const tx = cx * (1 - sc) + state.map.panX;
+          const ty = cy * (1 - sc) + state.map.panY;
+          baseLayer.setAttribute("transform", `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) scale(${sc})`);
+        }
+
         function draw() {
           const focusKey = document.activeElement?.getAttribute?.("data-line-key") || null;
           const rect = svg.getBoundingClientRect();
           state.map.w = Math.max(600, rect.width);
           state.map.h = Math.max(420, rect.height);
           svg.setAttribute("viewBox", `0 0 ${state.map.w} ${state.map.h}`);
-          svg.textContent = "";
+          computeFit();
+
+          /* keep the persistent basemap group; clear only the per-frame layers */
+          for (const child of [...svg.children]) {
+            if (child !== baseLayer) child.remove();
+          }
+          syncBasemap();
 
           const grid = document.createElementNS(SVG_NS, "g");
           const back = document.createElementNS(SVG_NS, "g");
           const front = document.createElementNS(SVG_NS, "g");
           const dots = document.createElementNS(SVG_NS, "g");
           svg.append(grid, back, front, dots);
-          drawGrid(grid);
+          if (!basemap) drawGrid(grid);
 
           for (const route of data.routes) {
             const shapes = data.routeShapes[route.key] || [];
@@ -2854,6 +3023,20 @@
           svg.setAttribute("aria-label", `Chart: daily on-time rate. ${trendSummary}`);
         }
 
+        /* held-out accuracy of the live model, for backing the "predicted"
+           claims; null when the export didn't carry a model block */
+        function modelAccuracy() {
+          const m = data.model;
+          if (!m || !m.valMaeSeconds || !m.rawFeedMaeSeconds) return null;
+          const sharper = (base) => Math.round((100 * (base - m.valMaeSeconds)) / base);
+          return {
+            mae: fmtDelay(m.valMaeSeconds),
+            vsRaw: sharper(m.rawFeedMaeSeconds),
+            vsSchedule: m.scheduleMaeSeconds ? sharper(m.scheduleMaeSeconds) : null,
+            days: m.valDays,
+          };
+        }
+
         /* live */
         function buildLive() {
           if (!live || !live.totals || !live.totals.stopArrivals) return;
@@ -2863,8 +3046,13 @@
           const lateArrivals = live.routes.reduce((sum, r) => sum + r.late_arrivals, 0);
           const updated = new Date(live.generatedAtUtc).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
           document.querySelector("#ldLiveTime").textContent = `as of ${updated}`;
-          document.querySelector("#ldLiveSub").textContent =
-            `${fmtInt(live.totals.trips)} vehicles are out on ${live.totals.routes} routes. The model expects ${fmtInt(lateArrivals)} of ${fmtInt(live.totals.stopArrivals)} upcoming arrivals to run more than five minutes late, concentrated on ${lateRoutes} routes. The hardest-hit arrivals:`;
+
+          const { trips, routes, stopArrivals } = live.totals;
+          const plural = (n, word) => `${fmtInt(n)} ${word}${n === 1 ? "" : "s"}`;
+          const fleet = `${plural(trips, "vehicle")} ${trips === 1 ? "is" : "are"} out on ${plural(routes, "route")}.`;
+          document.querySelector("#ldLiveSub").textContent = lateArrivals > 0
+            ? `${fleet} The model expects ${plural(lateArrivals, "arrival")} of the next ${fmtInt(stopArrivals)} to run more than five minutes late, across ${plural(lateRoutes, "route")}. The hardest-hit arrivals:`
+            : `${fleet} The model expects every one of the next ${fmtInt(stopArrivals)} arrivals to stay within five minutes of schedule. The closest calls:`;
 
           const wrap = document.querySelector("#ldArrivals");
           wrap.textContent = "";
@@ -2878,6 +3066,13 @@
               <em style="color:${color}">${fmtSignedMin(a.predicted_delay_seconds)} predicted</em>
             `;
             wrap.append(div);
+          }
+
+          const acc = modelAccuracy();
+          const note = document.querySelector("#ldModelNote");
+          note.hidden = !acc;
+          if (acc) {
+            note.innerHTML = `Across ${acc.days} days held out of training, these predictions averaged <strong>${acc.mae}</strong> of error — about <strong>${acc.vsRaw}% sharper</strong> than the agency's own real-time feed.`;
           }
         }
 
@@ -3036,8 +3231,12 @@
           }
         }
 
+        const colAcc = modelAccuracy();
+        const modelSentence = colAcc
+          ? `Live delay predictions come from a LightGBM model that, on ${colAcc.days} held-out days, hit a mean absolute error of ${colAcc.mae} — ${colAcc.vsRaw}% sharper than the raw GTFS-RT feed${colAcc.vsSchedule ? ` and ${colAcc.vsSchedule}% better than the schedule alone` : ""}.`
+          : `Live predictions by a LightGBM model over the realtime feed.`;
         document.querySelector("#ldColophon").textContent =
-          `Compiled from ${fmtInt(sys.obs)} GTFS-Realtime arrival observations against scheduled GTFS times, ${start} – ${end}, ${year}. Live predictions by a LightGBM model over the realtime feed. A project by the GRT Reliability Tracker.`;
+          `Compiled from ${fmtInt(sys.obs)} GTFS-Realtime arrival observations against scheduled GTFS times, ${start} – ${end}, ${year}. ${modelSentence} A project by the GRT Reliability Tracker.`;
 
         /* controls */
         for (const btn of root.querySelectorAll(".ld-filters button")) {
@@ -3452,10 +3651,16 @@
          Boot + view switching
          ================================================================ */
       async function boot() {
+        /* we restore the last-used view ourselves and scroll to top, so opt out
+           of the browser re-applying the previous scroll position on reload */
+        if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+
         let data;
         let live = null;
         try {
-          const response = await fetch("data/dashboard-data.json");
+          /* revalidate (cheap 304 when unchanged) so a redeployed data snapshot
+             is picked up instead of a stale heuristically-cached copy */
+          const response = await fetch("data/dashboard-data.json", { cache: "no-cache" });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           data = await response.json();
         } catch (error) {
@@ -3473,6 +3678,14 @@
           live = response.ok ? await response.json() : null;
         } catch { live = null; }
 
+        /* optional geographic basemap drawn under the routes; the map falls
+           back to the survey grid if it's missing (run analysis/build_basemap.py) */
+        let basemap = null;
+        try {
+          const response = await fetch("data/basemap.json");
+          basemap = response.ok ? await response.json() : null;
+        } catch { basemap = null; }
+
         /* drop leading partial-collection days (collection started mid-evening
            on the first day, so its near-perfect on-time rate is an artifact) */
         const sortedObs = data.systemByDate.map((r) => r.observations).sort((a, b) => a - b);
@@ -3487,7 +3700,7 @@
           `${fmtDateLong(data.overall.startDate)} – ${fmtDateLong(data.overall.endDate)}, ${data.overall.endDate.slice(0, 4)}`;
 
         const liveRef = { current: live };
-        const atlas = atlasModule(data, liveRef, sys);
+        const atlas = atlasModule(data, liveRef, sys, basemap);
         const report = reportModule(data, live, sys);
         const planner = plannerModule(data, liveRef, atlas);
 
@@ -3498,6 +3711,9 @@
           document.body.dataset.view = name;
           atlasRoot.hidden = name === "report";
           reportRoot.hidden = name !== "report";
+          /* always start at the top — never land mid–Field Report on reload or
+             when toggling back from a full-screen map view */
+          window.scrollTo(0, 0);
           for (const btn of document.querySelectorAll(".bar-nav button")) {
             if (btn.dataset.view === name) btn.setAttribute("aria-current", "page");
             else btn.removeAttribute("aria-current");

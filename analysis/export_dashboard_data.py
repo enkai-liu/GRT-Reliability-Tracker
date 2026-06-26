@@ -12,10 +12,35 @@ DEFAULT_RELIABILITY_ROOT = PROJECT_ROOT / "data" / "analysis" / "reliability"
 DEFAULT_TRANSFERS_ROOT = PROJECT_ROOT / "data" / "analysis" / "transfers"
 DEFAULT_STATIC_ROOT = PROJECT_ROOT / "data" / "parsed_static_gtfs"
 DEFAULT_OUTPUT = PROJECT_ROOT / "dashboard" / "data" / "dashboard-data.json"
+DEFAULT_MODEL_EVAL = PROJECT_ROOT / "data" / "analysis" / "models_live" / "evaluation.json"
 
 
 def iso_date(value):
     return date.fromisoformat(value).isoformat()
+
+
+def build_model_payload(model_eval_path):
+    """Live-model held-out accuracy, so the dashboard can back its "predicted"
+    claims. Returns None when the evaluation file isn't present."""
+    path = Path(model_eval_path)
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text())
+    lgbm = data.get("lgbm", {})
+    baselines = data.get("baselines", {})
+    val_dates = data.get("val_dates", [])
+    val_mae = lgbm.get("val_mae")
+    if val_mae is None:
+        return None
+    rnd = lambda v: round(v, 1) if isinstance(v, (int, float)) else None
+    return {
+        "valMaeSeconds": rnd(val_mae),
+        "rawFeedMaeSeconds": rnd(baselines.get("raw GTFS-RT prediction")),
+        "scheduleMaeSeconds": rnd(baselines.get("schedule (delay=0)")),
+        "valStart": val_dates[0] if val_dates else None,
+        "valEnd": val_dates[-1] if val_dates else None,
+        "valDays": len(val_dates),
+    }
 
 
 def route_key(mode, route_id):
@@ -62,7 +87,8 @@ def build_transfers_payload(con, transfers_root):
     return {"byRoute": by_route, "worst": worst}
 
 
-def build_dashboard_payload(reliability_root, transfers_root, static_root, start_date=None):
+def build_dashboard_payload(reliability_root, transfers_root, static_root, start_date=None,
+                            model_eval_path=DEFAULT_MODEL_EVAL):
     con = duckdb.connect()
     con.sql("SET timezone = 'UTC'")
 
@@ -193,6 +219,7 @@ def build_dashboard_payload(reliability_root, transfers_root, static_root, start
         "routeStops": route_stops,
         "routeShapes": route_shape_list,
         "transfers": build_transfers_payload(con, transfers_root),
+        "model": build_model_payload(model_eval_path),
     }
 
 
