@@ -27,6 +27,10 @@ logs/
 dashboard/data/**
 !dashboard/data/
 !dashboard/data/.gitkeep
+# Snapshot committed for the GitHub Pages deploy (see .github/workflows/deploy-pages.yml)
+!dashboard/data/dashboard-data.json
+!dashboard/data/timetable.json
+!dashboard/data/live-predictions.json
 
 # Local OS/editor noise
 .DS_Store
