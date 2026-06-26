@@ -144,6 +144,91 @@ gcloud compute ssh grt-collector-vm --zone us-east1-b \
   --command "journalctl -u grt-weather-forecast.service -f"
 ```
 
+## Live Predictions (real-time on the static site)
+
+The GitHub Pages dashboard ships with a frozen `live-predictions.json` snapshot, so its live panel shows "stale". To make it real-time, run the live scorer on the VM and have it upload fresh predictions to a public bucket the dashboard fetches:
+
+```text
+VM: predict_live.py --interval-seconds 300
+      └─ uploads live/live-predictions.json to GCS_LIVE_BUCKET (public, no-cache, CORS)
+            └─ dashboard fetches that URL (window.GRT_CONFIG.liveUrl in index.html)
+```
+
+`install_on_vm.sh` installs `grt-live-scorer.service` but leaves it disabled until the steps below are done.
+
+### 1. Prerequisites on the VM
+
+The scorer needs the trained model and parsed static GTFS present on the VM:
+
+```bash
+# trained model (lgbm_model.txt + any quantile models)
+gcloud compute scp --recurse data/analysis/models_live \
+  grt-collector-vm:/opt/grt-reliability-tracker/data/analysis/ --zone us-east1-b
+
+# parsed static GTFS (small; the scorer reads data/parsed_static_gtfs)
+gcloud compute ssh grt-collector-vm --zone us-east1-b --command \
+  "sudo -u grtcollector /opt/grt-reliability-tracker/collector/.venv/bin/python /opt/grt-reliability-tracker/collector/parse_static_gtfs.py --sync-from-gcs"
+
+# make sure both are owned by the service user
+gcloud compute ssh grt-collector-vm --zone us-east1-b --command \
+  "sudo chown -R grtcollector:grtcollector /opt/grt-reliability-tracker/data"
+```
+
+### 2. Create the public live bucket (separate from the private raw bucket)
+
+```bash
+gcloud storage buckets create gs://grt-reliability-live \
+  --location=us-east1 --uniform-bucket-level-access
+
+# public read
+gcloud storage buckets add-iam-policy-binding gs://grt-reliability-live \
+  --member=allUsers --role=roles/storage.objectViewer
+
+# CORS so the Pages origin can fetch it
+gcloud storage buckets update gs://grt-reliability-live \
+  --cors-file=ops/gcp/gcs-cors.json
+
+# let the VM service account write to it
+gcloud storage buckets add-iam-policy-binding gs://grt-reliability-live \
+  --member=serviceAccount:grt-collector@grt-reliability-raw-data.iam.gserviceaccount.com \
+  --role=roles/storage.objectAdmin
+```
+
+### 3. Point the VM scorer at the bucket and start it
+
+```bash
+gcloud compute ssh grt-collector-vm --zone us-east1-b --command \
+  "echo 'GCS_LIVE_BUCKET=grt-reliability-live' | sudo tee -a /opt/grt-reliability-tracker/.env"
+
+gcloud compute ssh grt-collector-vm --zone us-east1-b --command \
+  "sudo systemctl enable --now grt-live-scorer.service"
+
+gcloud compute ssh grt-collector-vm --zone us-east1-b --command \
+  "journalctl -u grt-live-scorer.service -f"
+```
+
+Lag features need history, so give it ~an hour of running during GRT service hours before predictions are meaningful. Confirm the object is public and fresh:
+
+```bash
+curl -sI https://storage.googleapis.com/grt-reliability-live/live/live-predictions.json
+```
+
+### 4. Point the dashboard at the live URL
+
+In `dashboard/index.html`, set the live URL near the top of the main `<script>`:
+
+```js
+window.GRT_CONFIG = { liveUrl: "https://storage.googleapis.com/grt-reliability-live/live/live-predictions.json" };
+```
+
+Commit and push to `main`; the Pages workflow redeploys. The panel now reads from the bucket and refreshes every minute, falling back to the bundled snapshot if the bucket is unreachable.
+
+### Caveats
+
+- **Service hours** — GRT only runs buses part of the day; off-hours the panel shows "not running". Expected.
+- **e2-micro RAM** — the scorer runs DuckDB + LightGBM over a 90-minute window. If it OOMs on the 1 GB e2-micro (check `journalctl`), lower `--window-minutes` in `grt-live-scorer.service` or move it to a larger machine type.
+- **Cost** — a 12 KB object fetched once a minute is negligible egress; the VM is the only standing cost.
+
 ## Stop Collection
 
 ```bash
