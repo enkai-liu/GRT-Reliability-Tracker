@@ -28,6 +28,7 @@
         --good-ink: #06281c;
         --edge: #525a66;
         --rail-w: 304px;
+        --bar-h: 60px;
         --shadow: 0 18px 44px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
         --serif: "Newsreader", Georgia, serif;
         --mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -100,7 +101,7 @@
         display: flex;
         align-items: center;
         gap: 28px;
-        height: 60px;
+        height: var(--bar-h);
         padding: 0 22px;
         background: rgba(14, 16, 20, 0.92);
         border-bottom: 1px solid var(--rule);
@@ -164,7 +165,7 @@
          ============================================================ */
       .atlas {
         position: fixed;
-        inset: 60px 0 0 0;
+        inset: var(--bar-h) 0 0 0;
       }
 
       .at-map {
@@ -1115,7 +1116,7 @@
          REPORT VIEW — the editorial field report
          ============================================================ */
       .ledger {
-        padding-top: 60px;
+        padding-top: var(--bar-h);
         font-size: 17px;
         line-height: 1.6;
       }
@@ -1725,6 +1726,101 @@
         background: var(--surface-2);
         font-family: var(--mono);
         font-size: 13px;
+      }
+
+      /* ============================================================
+         MOBILE — phones & small tablets
+         Masthead stacks to two rows; the Atlas / Planner / Detail
+         floating panels dock to the bottom as sheets so the map
+         stays the hero instead of being buried under a side rail.
+         ============================================================ */
+      @media (max-width: 760px) {
+        :root { --bar-h: 84px; }
+
+        /* masthead: wordmark on row 1, section nav on row 2 */
+        .bar {
+          flex-wrap: wrap;
+          align-content: center;
+          gap: 2px 16px;
+          padding: 8px 16px;
+        }
+        .bar-brand { flex: 0 0 100%; }
+        .bar-brand span { display: none; }       /* drop eyebrow -> single-line wordmark */
+        .bar-brand h1 { font-size: 18px; }
+        .bar-nav { flex: 0 0 100%; margin-left: 0; gap: 24px; }
+        .bar-nav button { padding: 4px 0; }
+        .bar-dates { display: none; }            /* date range also lives in the report footer */
+
+        /* map fills the top band; the sheet tiles below it (bg matches so
+           any gap in planner mode is seamless) */
+        .atlas { background: var(--bg-deep); }
+        .at-map { height: auto; bottom: 56vh; }
+
+        /* Atlas panels become bottom sheets */
+        .at-rail,
+        .at-detail,
+        .at-planner {
+          top: auto;
+          left: 8px;
+          right: 8px;
+          bottom: 8px;
+          width: auto;
+          height: auto;
+          border-radius: 16px;
+        }
+        .at-rail {
+          height: 56vh;
+          max-height: none;
+        }
+        .at-detail {
+          max-height: 84vh;
+          transform: translateY(16px);
+        }
+        .at-detail.open { transform: none; }
+        .at-planner { max-height: 72vh; }
+
+        /* grab-handle affordance at the top of each sheet */
+        .at-rail::before,
+        .at-detail::before,
+        .at-planner::before {
+          content: "";
+          flex: 0 0 auto;
+          width: 36px;
+          height: 4px;
+          margin: 8px auto 0;
+          border-radius: 99px;
+          background: var(--rule-strong);
+        }
+
+        /* 16px inputs stop iOS from auto-zooming on focus */
+        .at-rail-head input,
+        .pl-field input { font-size: 16px; }
+
+        /* zoom tools to the top-right of the visible map; legend hidden to declutter */
+        .at-tools,
+        body[data-view="planner"] .at-tools {
+          top: calc(var(--bar-h) + 10px);
+          right: 10px;
+          bottom: auto;
+        }
+        .at-legend { display: none; }
+
+        /* Field Report: tighter gutters, denser stat strips */
+        .ld-wrap { padding: 0 18px 80px; }
+        .ld-hero { padding: 44px 0 36px; }
+        .ld-statstrip { grid-template-columns: repeat(2, 1fr); }
+
+        /* league table: drop the inline bar + P90 columns so the row fits a phone */
+        .ld-cols,
+        .ld-rowbtn {
+          grid-template-columns: 26px 44px minmax(0, 1fr) auto 16px;
+          gap: 10px;
+        }
+        .ld-cols :nth-child(4),
+        .ld-cols :nth-child(6),
+        .ld-barwrap,
+        .ld-p90 { display: none; }
+        .ld-rate { text-align: right; }
       }
     </style>
   </head>
