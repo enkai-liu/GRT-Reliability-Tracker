@@ -2551,6 +2551,7 @@
 
           for (const v of vehicles) {
               const [x, y] = project(v.lat, v.lon);
+              const hasPred = Number.isFinite(v.predicted_delay_seconds);
               const color = delayHex(v.predicted_delay_seconds);
               const r = 6 / Math.sqrt(state.map.scale);
 
@@ -2569,11 +2570,15 @@
               dot.setAttribute("r", r.toFixed(2));
               dot.setAttribute("fill", color);
               const title = document.createElementNS(SVG_NS, "title");
-              title.textContent =
-                `${v.transit_mode === "lrt" ? "LRT" : "Bus"} ${v.route_short_name}` +
-                `${v.trip_headsign ? ` → ${v.trip_headsign}` : ""}` +
-                ` · next: ${v.next_stop_name} in ${Math.max(0, Math.round(v.next_stop_eta_minutes))} min` +
-                ` · ${fmtSignedMin(v.predicted_delay_seconds)} predicted`;
+              /* tooltip degrades gracefully: only scored trips carry a next
+                 stop / predicted delay, but every moving vehicle still shows */
+              let label = `${v.transit_mode === "lrt" ? "LRT" : "Bus"} ${v.route_short_name}`;
+              if (v.trip_headsign) label += ` → ${v.trip_headsign}`;
+              if (v.next_stop_name) {
+                label += ` · next: ${v.next_stop_name} in ${Math.max(0, Math.round(v.next_stop_eta_minutes))} min`;
+              }
+              label += hasPred ? ` · ${fmtSignedMin(v.predicted_delay_seconds)} predicted` : " · delay not predicted";
+              title.textContent = label;
               dot.append(title);
 
               dots.append(halo, dot);
@@ -2650,6 +2655,7 @@
         }
 
         function delayHex(seconds) {
+          if (!Number.isFinite(seconds)) return TOKENS.mut;
           if (seconds > 300) return TOKENS.poor;
           if (seconds > 120) return TOKENS.watch;
           return TOKENS.good;

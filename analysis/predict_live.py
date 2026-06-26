@@ -563,12 +563,18 @@ def encode_and_predict(con, model, quantile_models):
     return predictions, lower, upper
 
 
-def summarize(meta_rows, predictions, now, model_path, lower=None, upper=None, interval_quantiles=None):
-    """Build the dashboard JSON payload."""
+def summarize(meta_rows, predictions, now, model_path, lower=None, upper=None,
+              interval_quantiles=None, vehicles=None):
+    """Build the dashboard JSON payload.
+
+    ``vehicles`` is the full live marker list (one per moving vehicle, every
+    route) built by ``build_live_vehicles``; pass ``None`` for no markers. It is
+    kept independent of model scoring so selecting any route on the map shows
+    all of its buses, not just the trips the model happened to score.
+    """
     routes = {}
     arrivals = []
     trips = set()
-    vehicles = {}
 
     has_interval = lower is not None and upper is not None
 
@@ -615,30 +621,6 @@ def summarize(meta_rows, predictions, now, model_path, lower=None, upper=None, i
             arrival_entry["predicted_delay_upper_seconds"] = round(float(upper[i]))
         arrivals.append(arrival_entry)
 
-        # one map marker per trip, described by its next upcoming arrival
-        vlat = row.get("vehicle_lat")
-        vlon = row.get("vehicle_lon")
-        if vlat is not None and vlon is not None:
-            current = vehicles.get(row["trip_id"])
-            if current is None or row["prediction_lead_minutes"] < current["_lead_minutes"]:
-                vehicle_entry = {
-                    "_lead_minutes": row["prediction_lead_minutes"],
-                    "routeKey": key,
-                    "transit_mode": mode,
-                    "route_short_name": row["route_short_name"] or row["route_id"],
-                    "trip_headsign": row["trip_headsign"],
-                    "direction_id": row["direction_id"],
-                    "lat": round(float(vlat), 6),
-                    "lon": round(float(vlon), 6),
-                    "next_stop_name": row["stop_name"],
-                    "next_stop_eta_minutes": round(row["prediction_lead_minutes"], 1),
-                    "predicted_delay_seconds": round(float(predicted)),
-                }
-                if has_interval:
-                    vehicle_entry["predicted_delay_lower_seconds"] = round(float(lower[i]))
-                    vehicle_entry["predicted_delay_upper_seconds"] = round(float(upper[i]))
-                vehicles[row["trip_id"]] = vehicle_entry
-
     route_list = []
     for entry in sorted(routes.values(), key=lambda e: -(e["sum_predicted"] / e["arrivals"])):
         route_list.append({
@@ -656,12 +638,7 @@ def summarize(meta_rows, predictions, now, model_path, lower=None, upper=None, i
 
     arrivals.sort(key=lambda a: -a["predicted_delay_seconds"])
 
-    vehicle_list = []
-    for entry in vehicles.values():
-        entry = dict(entry)
-        entry.pop("_lead_minutes")
-        vehicle_list.append(entry)
-    vehicle_list.sort(key=lambda v: (v["routeKey"], v["trip_headsign"] or ""))
+    vehicle_list = vehicles or []
 
     return {
         "generatedAtUtc": now.isoformat(),
@@ -677,6 +654,108 @@ def summarize(meta_rows, predictions, now, model_path, lower=None, upper=None, i
         "vehicles": vehicle_list,
         "worstArrivals": arrivals[:40],
     }
+
+
+def build_trip_predictions(meta_rows, predictions, lower=None, upper=None):
+    """Per-trip prediction enrichment for the map markers.
+
+    Returns ``{trip_id: {next_stop_name, next_stop_eta_minutes,
+    predicted_delay_seconds, ...}}`` keyed on each trip's *next* upcoming scored
+    arrival (smallest lead time). Trips the model did not score are simply
+    absent, and their markers render without a prediction.
+    """
+    has_interval = lower is not None and upper is not None
+    best = {}
+    for i, (row, predicted) in enumerate(zip(meta_rows, predictions)):
+        trip_id = row["trip_id"]
+        lead = row["prediction_lead_minutes"]
+        current = best.get(trip_id)
+        if current is not None and lead >= current["_lead"]:
+            continue
+        entry = {
+            "_lead": lead,
+            "next_stop_name": row["stop_name"],
+            "next_stop_eta_minutes": round(lead, 1),
+            "predicted_delay_seconds": round(float(predicted)),
+        }
+        if has_interval:
+            entry["predicted_delay_lower_seconds"] = round(float(lower[i]))
+            entry["predicted_delay_upper_seconds"] = round(float(upper[i]))
+        best[trip_id] = entry
+    for entry in best.values():
+        entry.pop("_lead", None)
+    return best
+
+
+# Latest reported position per vehicle, joined to static GTFS for route/headsign.
+# Independent of model scoring so every moving bus on a route shows up — the
+# feed gives route_id + trip_id on every vehicle; bearing/direction are usually
+# null there, so direction comes from the static trips table.
+LIVE_VEHICLE_QUERY = """
+WITH latest_vp AS (
+    SELECT * EXCLUDE (rn) FROM (
+        SELECT
+            *,
+            CASE WHEN feed_name LIKE 'lrt_%' THEN 'lrt_static_gtfs' ELSE 'bus_static_gtfs' END AS static_feed,
+            CASE WHEN feed_name LIKE 'bus_%' THEN 'bus' ELSE 'lrt' END AS transit_mode,
+            row_number() OVER (
+                PARTITION BY coalesce(vehicle_id, entity_id)
+                ORDER BY vehicle_timestamp_utc DESC NULLS LAST, collected_at_utc DESC
+            ) AS rn
+        FROM vp
+        WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+          AND route_id IS NOT NULL AND route_id <> ''
+    ) WHERE rn = 1
+),
+route_lookup AS (SELECT DISTINCT p_feed, route_id, route_short_name FROM static_routes),
+trip_lookup AS (SELECT DISTINCT p_feed, trip_id, trip_headsign, direction_id FROM static_trips)
+SELECT
+    v.transit_mode,
+    v.route_id,
+    coalesce(r.route_short_name, v.route_id) AS route_short_name,
+    v.trip_id,
+    coalesce(v.direction_id, TRY_CAST(t.direction_id AS BIGINT)) AS direction_id,
+    t.trip_headsign,
+    v.latitude AS lat,
+    v.longitude AS lon,
+    v.vehicle_timestamp_utc
+FROM latest_vp v
+LEFT JOIN route_lookup r ON v.route_id = r.route_id AND v.static_feed = r.p_feed
+LEFT JOIN trip_lookup t ON v.trip_id = t.trip_id AND v.static_feed = t.p_feed
+ORDER BY v.transit_mode, v.route_id
+"""
+
+
+def build_live_vehicles(con, now, trip_predictions):
+    """Build the full live marker list from the raw vehicle-position snapshot,
+    enriching each with its trip's prediction (next stop, predicted delay) where
+    the model scored it."""
+    relation = con.sql(LIVE_VEHICLE_QUERY)
+    cols = relation.columns
+    markers = []
+    for raw in relation.fetchall():
+        row = dict(zip(cols, raw))
+        direction = row["direction_id"]
+        marker = {
+            "routeKey": f"{row['transit_mode']}:{row['route_id']}",
+            "transit_mode": row["transit_mode"],
+            "route_short_name": row["route_short_name"] or row["route_id"],
+            "trip_headsign": row["trip_headsign"],
+            "direction_id": int(direction) if direction is not None else None,
+            "lat": round(float(row["lat"]), 6),
+            "lon": round(float(row["lon"]), 6),
+        }
+        timestamp = row["vehicle_timestamp_utc"]
+        if timestamp is not None:
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            marker["position_age_seconds"] = max(0, round((now - timestamp).total_seconds()))
+        prediction = trip_predictions.get(row["trip_id"])
+        if prediction:
+            marker.update(prediction)
+        markers.append(marker)
+    markers.sort(key=lambda m: (m["routeKey"], m["trip_headsign"] or ""))
+    return markers
 
 
 def write_predictions_log(con, predictions, log_root, now, lower=None, upper=None):
@@ -793,8 +872,11 @@ def run_cycle(args, session, model, quantile_models, bucket=None):
     feature_count = con.sql("SELECT count(*) FROM live_features").fetchone()[0]
     if feature_count == 0:
         print("  no scoreable arrivals in the latest snapshot (static GTFS join may be stale)")
-        payload = summarize([], np.array([]), now, args.model_root / "lgbm_model.txt")
+        # still publish live positions, just without per-trip predictions
+        vehicles = build_live_vehicles(con, now, {})
+        payload = summarize([], np.array([]), now, args.model_root / "lgbm_model.txt", vehicles=vehicles)
         write_output(payload, args.output, bucket, args.gcs_object)
+        con.close()
         return
 
     predictions, lower, upper = encode_and_predict(con, model, quantile_models)
@@ -803,10 +885,13 @@ def run_cycle(args, session, model, quantile_models, bucket=None):
     meta_cols = meta_relation.columns
     meta_rows = [dict(zip(meta_cols, row)) for row in meta_relation.fetchall()]
 
+    trip_predictions = build_trip_predictions(meta_rows, predictions, lower=lower, upper=upper)
+    vehicles = build_live_vehicles(con, now, trip_predictions)
+
     interval_quantiles = sorted(quantile_models) if len(quantile_models) >= 2 else None
     payload = summarize(
         meta_rows, predictions, now, args.model_root / "lgbm_model.txt",
-        lower=lower, upper=upper, interval_quantiles=interval_quantiles,
+        lower=lower, upper=upper, interval_quantiles=interval_quantiles, vehicles=vehicles,
     )
     write_output(payload, args.output, bucket, args.gcs_object)
 
@@ -816,7 +901,8 @@ def run_cycle(args, session, model, quantile_models, bucket=None):
     mean_pred = float(np.mean(predictions))
     print(
         f"  scored {feature_count} arrivals across {payload['totals']['trips']} trips "
-        f"({payload['totals']['routes']} routes), mean predicted delay {mean_pred:.0f}s"
+        f"({payload['totals']['routes']} routes), mean predicted delay {mean_pred:.0f}s; "
+        f"{len(vehicles)} live vehicles on the map"
     )
     print(f"  wrote {args.output} and {log_path}")
 
