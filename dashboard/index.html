@@ -2029,6 +2029,15 @@
     <script>
       "use strict";
 
+      /* ── Live data source ──────────────────────────────────────────────
+         The live-predictions panel fetches from LIVE_URL. Locally this is the
+         bundled snapshot. To show REAL-TIME predictions on a static deploy,
+         set liveUrl to the public URL the scorer uploads to, e.g.
+         https://storage.googleapis.com/<bucket>/live/live-predictions.json
+         ─────────────────────────────────────────────────────────────────── */
+      window.GRT_CONFIG = window.GRT_CONFIG || { liveUrl: "" };
+      const LIVE_URL = window.GRT_CONFIG.liveUrl || "data/live-predictions.json";
+
       const SVG_NS = "http://www.w3.org/2000/svg";
 
       /* SVG presentation attributes can't use var(); read the tokens once */
@@ -3460,7 +3469,7 @@
           return;
         }
         try {
-          const response = await fetch(`data/live-predictions.json?t=${Date.now()}`, { cache: "no-store" });
+          const response = await fetch(`${LIVE_URL}?t=${Date.now()}`, { cache: "no-store" });
           live = response.ok ? await response.json() : null;
         } catch { live = null; }
 
@@ -3507,7 +3516,7 @@
         /* keep vehicle positions current while the page is open */
         window.setInterval(async () => {
           try {
-            const response = await fetch(`data/live-predictions.json?t=${Date.now()}`, { cache: "no-store" });
+            const response = await fetch(`${LIVE_URL}?t=${Date.now()}`, { cache: "no-store" });
             if (response.ok) {
               liveRef.current = await response.json();
               if (!atlasRoot.hidden) atlas.redraw();
