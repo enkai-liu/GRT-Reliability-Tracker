@@ -2332,14 +2332,20 @@
           const f = state.map.fit;
           if (!f) return;
           const sc = state.map.scale;
-          const axis = (b0, b1, c, v0, v1, pan) => {
-            const lo = c + (b0 - c) * sc;
-            const hi = c + (b1 - c) * sc;
-            if (hi - lo <= v1 - v0) return (v0 + v1 - lo - hi) / 2; // smaller than box -> centre
-            return Math.max(v1 - hi, Math.min(v0 - lo, pan));       // larger -> cover the box
+          const cx = state.map.w / 2, cy = state.map.h / 2;
+          const bcx = (f.box.x0 + f.box.x1) / 2, bcy = (f.box.y0 + f.box.y1) / 2;
+          /* Keep the view centre over the network at every zoom: any edge can be
+             dragged to the middle of the visible box, but the network can't be
+             dragged entirely out of view. The pixel range still scales with zoom
+             (more px per metre), yet the area you can reach is always the whole
+             network — the same region at any zoom. */
+          const axis = (b0, b1, c, bc, pan) => {
+            const lo = bc - c - (b1 - c) * sc;  // far edge (b1) at the box centre
+            const hi = bc - c - (b0 - c) * sc;  // near edge (b0) at the box centre
+            return Math.max(lo, Math.min(hi, pan));
           };
-          state.map.panX = axis(f.bx0, f.bx1, state.map.w / 2, f.box.x0, f.box.x1, state.map.panX);
-          state.map.panY = axis(f.by0, f.by1, state.map.h / 2, f.box.y0, f.box.y1, state.map.panY);
+          state.map.panX = axis(f.bx0, f.bx1, cx, bcx, state.map.panX);
+          state.map.panY = axis(f.by0, f.by1, cy, bcy, state.map.panY);
         }
 
         /* base (pre-zoom) coords — the basemap group is drawn once here and
