@@ -194,17 +194,6 @@
       .bm-layer path { pointer-events: none; }
       .bm-water {
         fill: rgba(66, 116, 170, 0.13);
-        stroke: rgba(96, 152, 208, 0.16);
-        stroke-width: 0.6;
-        vector-effect: non-scaling-stroke;
-      }
-      .bm-river {
-        fill: none;
-        stroke: rgba(91, 168, 232, 0.26);
-        stroke-width: 1.1;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-        vector-effect: non-scaling-stroke;
       }
       .bm-road {
         fill: none;
@@ -2325,11 +2314,32 @@
           const box = fitBox();
           const boxW = box.x1 - box.x0, boxH = box.y1 - box.y0;
           const s = Math.min(boxW / worldW, boxH / worldH);
+          const ox = box.x0 + (boxW - worldW * s) / 2;
+          const oy = box.y0 + (boxH - worldH * s) / 2;
           state.map.fit = {
-            s, cosLat, minLat, maxLat, minLon,
-            ox: box.x0 + (boxW - worldW * s) / 2,
-            oy: box.y0 + (boxH - worldH * s) / 2,
+            s, cosLat, minLat, maxLat, minLon, ox, oy,
+            /* network extent in base coords + the visible box, so pan/zoom can
+               be clamped: the fit (scale 1) is the most you're allowed to see */
+            bx0: ox, by0: oy, bx1: ox + worldW * s, by1: oy + worldH * s,
+            box,
           };
+        }
+
+        /* Keep the network within the visible box: at the minimum zoom (the
+           fit) it stays centred, and zoomed in you can't pan past its edges
+           into empty surroundings. Caps the viewable area on both views. */
+        function clampPan() {
+          const f = state.map.fit;
+          if (!f) return;
+          const sc = state.map.scale;
+          const axis = (b0, b1, c, v0, v1, pan) => {
+            const lo = c + (b0 - c) * sc;
+            const hi = c + (b1 - c) * sc;
+            if (hi - lo <= v1 - v0) return (v0 + v1 - lo - hi) / 2; // smaller than box -> centre
+            return Math.max(v1 - hi, Math.min(v0 - lo, pan));       // larger -> cover the box
+          };
+          state.map.panX = axis(f.bx0, f.bx1, state.map.w / 2, f.box.x0, f.box.x1, state.map.panX);
+          state.map.panY = axis(f.by0, f.by1, state.map.h / 2, f.box.y0, f.box.y1, state.map.panY);
         }
 
         /* base (pre-zoom) coords — the basemap group is drawn once here and
@@ -2409,8 +2419,10 @@
           return closed ? d + "Z" : d;
         }
 
-        /* Build the geographic basemap once into `baseLayer` (water, rivers,
-           roads, region/municipal boundaries), all under the colored routes. */
+        /* Build the geographic basemap once into `baseLayer` (water bodies,
+           roads, region/municipal boundaries), all under the colored routes.
+           River centerlines are intentionally not drawn — water shows as
+           filled bodies only. */
         function buildBasemap() {
           baseLayer.textContent = "";
           const add = (cls, lines, closed) => {
@@ -2423,7 +2435,6 @@
             }
           };
           add("bm-water", basemap.water || [], true);
-          add("bm-river", basemap.rivers || [], false);
           add("bm-road bm-arterial", basemap.roads?.arterial || [], false);
           add("bm-road bm-highway", basemap.roads?.highway || [], false);
           add("bm-bound bm-municipal", basemap.boundary?.municipal || [], false);
@@ -2456,6 +2467,7 @@
           state.map.h = Math.max(420, rect.height);
           svg.setAttribute("viewBox", `0 0 ${state.map.w} ${state.map.h}`);
           computeFit();
+          clampPan();
 
           /* keep the persistent basemap group; clear only the per-frame layers */
           for (const child of [...svg.children]) {
@@ -2572,13 +2584,15 @@
 
         function setZoom(next, ax = state.map.w / 2, ay = state.map.h / 2) {
           const prev = state.map.scale;
-          const scale = Math.min(7, Math.max(0.65, next));
+          /* floor is the fit (1): the network framing is the widest allowed view */
+          const scale = Math.min(7, Math.max(1, next));
           if (scale === prev) return;
           const cx = state.map.w / 2;
           const cy = state.map.h / 2;
           state.map.panX = ax - cx - ((ax - cx - state.map.panX) / prev) * scale;
           state.map.panY = ay - cy - ((ay - cy - state.map.panY) / prev) * scale;
           state.map.scale = scale;
+          clampPan();
           draw();
         }
 
@@ -2806,6 +2820,7 @@
           if (!state.map.moved) return;
           state.map.panX = state.map.px + event.clientX - state.map.sx;
           state.map.panY = state.map.py + event.clientY - state.map.sy;
+          clampPan();
           draw();
         });
 
