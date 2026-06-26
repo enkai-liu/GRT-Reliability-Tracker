@@ -70,6 +70,12 @@ snapshot-history and vehicle-position features.
 the final delay is above `--late-delay-threshold-seconds`, which defaults to
 300 seconds.
 
+`--quantiles` (default `0.1,0.9`) additionally trains one quantile-objective
+LightGBM model per quantile, saved as `lgbm_model_q10.txt` / `lgbm_model_q90.txt`
+next to the point model. These power prediction intervals ("arrives +2 to
++9 min"); `evaluation.txt` reports pinball loss per quantile plus the empirical
+coverage and width of the interval. Pass an empty string to skip them.
+
 ### Live Scoring
 
 `predict_live.py` serves the trained model against the current GTFS-RT feeds:
@@ -89,6 +95,11 @@ trained model), scores the newest snapshot, and writes:
 - `data/live/predictions_log/date=YYYY-MM-DD/run-TIMESTAMP.parquet` — full
   scored rows for later evaluation against observed delays.
 
+When `lgbm_model_qNN.txt` quantile models are present in `--model-root`, each
+arrival also gets `predicted_delay_lower_seconds` / `predicted_delay_upper_seconds`
+(clamped so lower ≤ point ≤ upper), and the dashboard shows the range
+("+2 to +9 min") instead of a single delay value.
+
 Notes:
 
 - Snapshot-history lag features start out null on a cold start; predictions
@@ -100,6 +111,30 @@ Notes:
   `collector/.venv/bin/python collector/parse_static_gtfs.py --sync-from-gcs --gcs-bucket grt-reliability-raw-data --date <today>`.
 - Categorical features are encoded with DuckDB's `hash(...) % 100000`, exactly
   as in `train_model.py`; both scripts must run with the same DuckDB version.
+
+## Bus Bunching
+
+`build_bunching.py` detects bunching from observed headways in the feature
+table (so run `build_features.py` first):
+
+```bash
+collector/.venv/bin/python analysis/build_bunching.py
+```
+
+For each route/direction/stop, trips are ordered by scheduled arrival and the
+observed headway behind the preceding vehicle is compared to the scheduled
+headway. An arrival is **bunched** when the observed headway is below 0.5x the
+scheduled headway (`--bunched-ratio`) and **gapped** above 1.5x
+(`--gapped-ratio`). Only scheduled headways between 2 and 30 minutes are
+considered. Summaries include excess wait time: the extra average wait a
+randomly arriving rider experiences versus even service, from headway
+variability (E[h²]/2E[h], observed minus scheduled).
+
+Outputs under `data/analysis/bunching/`:
+
+- `events/date=YYYY-MM-DD/part-000.parquet` — one row per observed headway
+- `system_by_date`, `route_summary`, `route_by_hour`, `stop_summary` (CSV + Parquet)
+- `bunching_report.md`
 
 ## Transfer Reliability
 

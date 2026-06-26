@@ -594,6 +594,14 @@ function delayMinutes(secondsValue) {
   return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)} min`;
 }
 
+function delayRange(lowerSeconds, upperSeconds) {
+  const lower = Math.round(Number(lowerSeconds || 0) / 60);
+  const upper = Math.round(Number(upperSeconds || 0) / 60);
+  if (lower === upper) return null;
+  const signed = (minutes) => `${minutes > 0 ? "+" : ""}${minutes}`;
+  return `${signed(lower)} to ${signed(upper)} min`;
+}
+
 function delayColor(secondsValue) {
   if (secondsValue <= 120) return "var(--good)";
   if (secondsValue <= 300) return "var(--watch)";
@@ -635,6 +643,12 @@ function renderLiveArrivals(arrivals, emptyMessage) {
     return;
   }
   for (const arrival of arrivals) {
+    const range = delayRange(arrival.predicted_delay_lower_seconds, arrival.predicted_delay_upper_seconds);
+    const hasRange = range !== null
+      && arrival.predicted_delay_lower_seconds !== undefined
+      && arrival.predicted_delay_upper_seconds !== undefined;
+    const delayText = hasRange ? range : delayMinutes(arrival.predicted_delay_seconds);
+    const delayTitle = hasRange ? ` title="most likely ${delayMinutes(arrival.predicted_delay_seconds)}"` : "";
     const row = document.createElement("div");
     row.className = "live-arrival";
     row.innerHTML = `
@@ -642,7 +656,7 @@ function renderLiveArrivals(arrivals, emptyMessage) {
         <strong>${arrival.transit_mode.toUpperCase()} ${arrival.route_short_name} · ${arrival.stop_name || arrival.stop_id}</strong>
         <span>arrives in ${Math.round(arrival.eta_minutes)} min · feed says ${delayMinutes(arrival.feed_delay_seconds)}</span>
       </div>
-      <div class="live-delay" style="color:${delayColor(arrival.predicted_delay_seconds)}">${delayMinutes(arrival.predicted_delay_seconds)}</div>
+      <div class="live-delay" style="color:${delayColor(arrival.predicted_delay_seconds)}"${delayTitle}>${delayText}</div>
     `;
     els.liveArrivals.append(row);
   }

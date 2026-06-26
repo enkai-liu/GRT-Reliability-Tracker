@@ -8,10 +8,12 @@ Baselines:
   2. Route-stop-hour average (median delay per route_id, stop_id, hour_of_day, is_weekend)
 
 Primary model:
-  LightGBM gradient boosted trees with MAE objective.
+  LightGBM gradient boosted trees with MAE objective, plus quantile-objective
+  models (default q10/q90) for prediction intervals ("arrives +2 to +9 min").
 
 Output:
-  - data/analysis/models/lgbm_model.txt (LightGBM model)
+  - data/analysis/models/lgbm_model.txt (LightGBM point model)
+  - data/analysis/models/lgbm_model_q10.txt, lgbm_model_q90.txt (quantile models)
   - data/analysis/models/route_hour_avg.parquet (baseline lookup)
   - data/analysis/models/route_stop_hour_avg.parquet (baseline lookup)
   - data/analysis/models/evaluation.txt (comparison report)
@@ -238,6 +240,10 @@ def prepare_lgbm_data(con):
     return result, columns
 
 
+def quantile_model_filename(quantile):
+    return f"lgbm_model_q{int(round(quantile * 100)):02d}.txt"
+
+
 def train_lgbm(
     con,
     output_root,
@@ -247,6 +253,7 @@ def train_lgbm(
     max_val_rows,
     late_delay_threshold_seconds,
     late_delay_weight,
+    quantiles,
 ):
     """Train LightGBM model with time-based split."""
     import numpy as np
@@ -368,8 +375,52 @@ def train_lgbm(
     model.save_model(str(model_path))
     print(f"Saved model to {model_path}")
 
+    # Quantile models for prediction intervals, trained on the same datasets.
+    quantile_results = {}
+    quantile_val_preds = {}
+    for q in quantiles:
+        print(f"\nTraining quantile model (alpha={q})...")
+        q_params = dict(params, objective="quantile", alpha=q, metric="quantile")
+        q_callbacks = [lgb.log_evaluation(50)]
+        if train_dates != val_dates:
+            q_callbacks.append(lgb.early_stopping(20))
+        q_model = lgb.train(
+            q_params,
+            train_data,
+            num_boost_round=200,
+            valid_sets=[val_data],
+            valid_names=["val"],
+            callbacks=q_callbacks,
+        )
+        q_path = output_root / quantile_model_filename(q)
+        q_model.save_model(str(q_path))
+        print(f"Saved quantile model to {q_path}")
+
+        q_pred = q_model.predict(X_val)
+        quantile_val_preds[q] = q_pred
+        residual = y_val - q_pred
+        pinball = np.mean(np.maximum(q * residual, (q - 1) * residual))
+        quantile_results[q] = {
+            "pinball_loss": float(pinball),
+            "coverage_below": float(np.mean(y_val <= q_pred)),
+            "best_iteration": q_model.best_iteration,
+        }
+
+    interval_results = None
+    if len(quantiles) >= 2:
+        lo_q, hi_q = min(quantiles), max(quantiles)
+        lo_pred = np.minimum(quantile_val_preds[lo_q], quantile_val_preds[hi_q])
+        hi_pred = np.maximum(quantile_val_preds[lo_q], quantile_val_preds[hi_q])
+        interval_results = {
+            "lower_quantile": lo_q,
+            "upper_quantile": hi_q,
+            "nominal_coverage": hi_q - lo_q,
+            "empirical_coverage": float(np.mean((y_val >= lo_pred) & (y_val <= hi_pred))),
+            "mean_width_seconds": float(np.mean(hi_pred - lo_pred)),
+            "median_width_seconds": float(np.median(hi_pred - lo_pred)),
+        }
+
     # Evaluate
-    import numpy as np
     val_pred = model.predict(X_val)
     val_mae = np.mean(np.abs(y_val - val_pred))
     val_weighted_mae = np.average(np.abs(y_val - val_pred), weights=val_weights)
@@ -395,6 +446,8 @@ def train_lgbm(
         "val_wait_risk_mean": float(val_wait_risk_mean),
         "late_delay_threshold_seconds": float(late_delay_threshold_seconds),
         "late_delay_weight": float(late_delay_weight),
+        "quantiles": {str(q): metrics for q, metrics in quantile_results.items()},
+        "interval": interval_results,
         "feature_importance": importance,
         "train_rows": len(y_train),
         "val_rows": len(y_val),
@@ -445,6 +498,24 @@ def write_evaluation(output_root, baseline_results, lgbm_results, train_dates, v
         lines.append(f"  Train rows: {lgbm_results['train_rows']}")
         lines.append(f"  Val rows:   {lgbm_results['val_rows']}")
         lines.append(f"  Best iteration: {lgbm_results['best_iteration']}")
+        if lgbm_results["quantiles"]:
+            lines.append("")
+            lines.append("Quantile Models (validation):")
+            for q, metrics in lgbm_results["quantiles"].items():
+                lines.append(
+                    f"  q={q}: pinball loss {metrics['pinball_loss']:.1f}s, "
+                    f"fraction of actuals at/below prediction {metrics['coverage_below']:.3f} "
+                    f"(target {float(q):.2f})"
+                )
+            interval = lgbm_results["interval"]
+            if interval:
+                lines.append(
+                    f"  Interval [q{interval['lower_quantile']:.2f}, q{interval['upper_quantile']:.2f}]: "
+                    f"empirical coverage {interval['empirical_coverage']:.3f} "
+                    f"(nominal {interval['nominal_coverage']:.2f}), "
+                    f"mean width {interval['mean_width_seconds']:.0f}s, "
+                    f"median width {interval['median_width_seconds']:.0f}s"
+                )
         lines.append("")
         lines.append("Feature Importance (gain):")
         for feat, gain in lgbm_results["feature_importance"].items():
@@ -474,6 +545,8 @@ def write_evaluation(output_root, baseline_results, lgbm_results, train_dates, v
             "val_wait_risk_mean": lgbm_results["val_wait_risk_mean"],
             "late_delay_threshold_seconds": lgbm_results["late_delay_threshold_seconds"],
             "late_delay_weight": lgbm_results["late_delay_weight"],
+            "quantiles": lgbm_results["quantiles"],
+            "interval": lgbm_results["interval"],
             "feature_importance": {k: float(v) for k, v in lgbm_results["feature_importance"].items()},
         }
     json_path.write_text(json.dumps(json_data, indent=2))
@@ -509,6 +582,11 @@ def parse_args():
         "--late-delay-weight", type=float, default=1.0,
         help="Training/evaluation weight for rows above --late-delay-threshold-seconds.",
     )
+    parser.add_argument(
+        "--quantiles", default="0.1,0.9",
+        help="Comma-separated quantiles for prediction-interval models. "
+             "Empty string skips quantile training.",
+    )
     return parser.parse_args()
 
 
@@ -539,6 +617,10 @@ def main():
     for name, mae in sorted(baseline_results.items(), key=lambda x: x[1]):
         print(f"  {name}: {mae:.1f}s")
 
+    quantiles = sorted(float(q) for q in args.quantiles.split(",") if q.strip())
+    if any(not 0 < q < 1 for q in quantiles):
+        raise SystemExit(f"Quantiles must be in (0, 1), got: {quantiles}")
+
     lgbm_results = None
     if not args.skip_lgbm:
         print("\nTraining LightGBM model...")
@@ -551,6 +633,7 @@ def main():
             args.max_val_rows,
             args.late_delay_threshold_seconds,
             args.late_delay_weight,
+            quantiles,
         )
 
     write_evaluation(output_root, baseline_results, lgbm_results, train_dates, val_dates)

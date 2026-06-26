@@ -25,6 +25,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -45,6 +46,7 @@ from collect_feeds import (  # noqa: E402
     configured_feeds,
     fetch_bytes,
     is_valid_realtime,
+    make_gcs_bucket,
     make_session,
 )
 from parse_snapshots import TABLE_SCHEMAS, parse_snapshot  # noqa: E402
@@ -522,8 +524,12 @@ def build_feature_query(stride_minutes, has_weather):
     """
 
 
-def encode_and_predict(con, model):
-    """Encode live_features exactly as train_model.py and score."""
+def encode_and_predict(con, model, quantile_models):
+    """Encode live_features exactly as train_model.py and score all models.
+
+    Returns (point_predictions, lower_predictions, upper_predictions); the
+    interval arrays are None when no quantile models are available.
+    """
     feature_select = []
     for f in NUMERIC_FEATURES:
         feature_select.append(f"COALESCE({f}, 0)::DOUBLE AS {f}")
@@ -541,20 +547,32 @@ def encode_and_predict(con, model):
     """).fetchall()
 
     if not rows:
-        return np.array([])
+        return np.array([]), None, None
 
     X = np.array(rows, dtype=np.float64)
-    return model.predict(X)
+    predictions = model.predict(X)
+
+    if len(quantile_models) < 2:
+        return predictions, None, None
+
+    quantile_preds = {q: m.predict(X) for q, m in quantile_models.items()}
+    lo_q, hi_q = min(quantile_preds), max(quantile_preds)
+    # Quantile models are trained independently, so enforce lower <= point <= upper.
+    lower = np.minimum(quantile_preds[lo_q], predictions)
+    upper = np.maximum(quantile_preds[hi_q], predictions)
+    return predictions, lower, upper
 
 
-def summarize(meta_rows, predictions, now, model_path):
+def summarize(meta_rows, predictions, now, model_path, lower=None, upper=None, interval_quantiles=None):
     """Build the dashboard JSON payload."""
     routes = {}
     arrivals = []
     trips = set()
     vehicles = {}
 
-    for row, predicted in zip(meta_rows, predictions):
+    has_interval = lower is not None and upper is not None
+
+    for i, (row, predicted) in enumerate(zip(meta_rows, predictions)):
         mode = row["transit_mode"]
         key = f"{mode}:{row['route_id']}"
         trips.add(row["trip_id"])
@@ -579,7 +597,7 @@ def summarize(meta_rows, predictions, now, model_path):
         if predicted > LATE_THRESHOLD_SECONDS:
             entry["late_arrivals"] += 1
 
-        arrivals.append({
+        arrival_entry = {
             "routeKey": key,
             "route_short_name": row["route_short_name"] or row["route_id"],
             "transit_mode": mode,
@@ -591,7 +609,11 @@ def summarize(meta_rows, predictions, now, model_path):
             "eta_minutes": round(row["prediction_lead_minutes"], 1),
             "predicted_delay_seconds": round(float(predicted)),
             "feed_delay_seconds": round(row["current_predicted_delay_seconds"]),
-        })
+        }
+        if has_interval:
+            arrival_entry["predicted_delay_lower_seconds"] = round(float(lower[i]))
+            arrival_entry["predicted_delay_upper_seconds"] = round(float(upper[i]))
+        arrivals.append(arrival_entry)
 
         # one map marker per trip, described by its next upcoming arrival
         vlat = row.get("vehicle_lat")
@@ -599,7 +621,7 @@ def summarize(meta_rows, predictions, now, model_path):
         if vlat is not None and vlon is not None:
             current = vehicles.get(row["trip_id"])
             if current is None or row["prediction_lead_minutes"] < current["_lead_minutes"]:
-                vehicles[row["trip_id"]] = {
+                vehicle_entry = {
                     "_lead_minutes": row["prediction_lead_minutes"],
                     "routeKey": key,
                     "transit_mode": mode,
@@ -612,6 +634,10 @@ def summarize(meta_rows, predictions, now, model_path):
                     "next_stop_eta_minutes": round(row["prediction_lead_minutes"], 1),
                     "predicted_delay_seconds": round(float(predicted)),
                 }
+                if has_interval:
+                    vehicle_entry["predicted_delay_lower_seconds"] = round(float(lower[i]))
+                    vehicle_entry["predicted_delay_upper_seconds"] = round(float(upper[i]))
+                vehicles[row["trip_id"]] = vehicle_entry
 
     route_list = []
     for entry in sorted(routes.values(), key=lambda e: -(e["sum_predicted"] / e["arrivals"])):
@@ -641,6 +667,7 @@ def summarize(meta_rows, predictions, now, model_path):
         "generatedAtUtc": now.isoformat(),
         "model": str(model_path),
         "lateThresholdSeconds": LATE_THRESHOLD_SECONDS,
+        "intervalQuantiles": list(interval_quantiles) if has_interval and interval_quantiles else None,
         "totals": {
             "stopArrivals": len(arrivals),
             "trips": len(trips),
@@ -652,12 +679,18 @@ def summarize(meta_rows, predictions, now, model_path):
     }
 
 
-def write_predictions_log(con, predictions, log_root, now):
+def write_predictions_log(con, predictions, log_root, now, lower=None, upper=None):
     con.sql("CREATE OR REPLACE TABLE log_meta AS SELECT * FROM live_features ORDER BY trip_id, stop_sequence")
-    pred_table = pa.table({
+    has_interval = lower is not None and upper is not None
+    pred_columns = {
         "rn": pa.array(range(1, len(predictions) + 1), type=pa.int64()),
         "predicted_delay_seconds": pa.array(predictions, type=pa.float64()),
-    })
+        "predicted_delay_lower_seconds": pa.array(
+            lower if has_interval else [None] * len(predictions), type=pa.float64()),
+        "predicted_delay_upper_seconds": pa.array(
+            upper if has_interval else [None] * len(predictions), type=pa.float64()),
+    }
+    pred_table = pa.table(pred_columns)
     con.register("pred_table", pred_table)
     log_dir = log_root / f"date={now.strftime('%Y-%m-%d')}"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -669,7 +702,9 @@ def write_predictions_log(con, predictions, log_root, now):
                 m.stop_id, m.stop_sequence, m.direction_id, m.service_date,
                 m.scheduled_arrival_utc, m.predicted_arrival_utc, m.prediction_lead_minutes,
                 m.current_predicted_delay_seconds,
-                p.predicted_delay_seconds
+                p.predicted_delay_seconds,
+                p.predicted_delay_lower_seconds,
+                p.predicted_delay_upper_seconds
             FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY trip_id, stop_sequence) AS rn FROM log_meta) m
             JOIN pred_table p USING (rn)
         ) TO '{log_path}' (FORMAT PARQUET, COMPRESSION SNAPPY)
@@ -677,7 +712,31 @@ def write_predictions_log(con, predictions, log_root, now):
     return log_path
 
 
-def run_cycle(args, session, model):
+def load_quantile_models(model_root):
+    """Load lgbm_model_qNN.txt boosters keyed by quantile, e.g. {0.1: ..., 0.9: ...}."""
+    models = {}
+    for path in sorted(model_root.glob("lgbm_model_q*.txt")):
+        try:
+            quantile = int(path.stem.removeprefix("lgbm_model_q")) / 100
+        except ValueError:
+            continue
+        models[quantile] = lgb.Booster(model_file=str(path))
+    return models
+
+
+def write_output(payload, output_path, bucket=None, object_name=None):
+    """Write the dashboard live JSON locally, and — when a GCS bucket is given —
+    upload it as a no-cache object so a statically hosted dashboard (e.g. GitHub
+    Pages) can fetch fresh predictions cross-origin each minute."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    if bucket is not None and object_name:
+        blob = bucket.blob(object_name)
+        blob.cache_control = "no-cache, max-age=0"
+        blob.upload_from_filename(str(output_path), content_type="application/json")
+
+
+def run_cycle(args, session, model, quantile_models, bucket=None):
     now = utc_now()
     raw_root = args.live_root / "raw"
     weather_root = raw_root / "weather_forecasts"
@@ -735,21 +794,23 @@ def run_cycle(args, session, model):
     if feature_count == 0:
         print("  no scoreable arrivals in the latest snapshot (static GTFS join may be stale)")
         payload = summarize([], np.array([]), now, args.model_root / "lgbm_model.txt")
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+        write_output(payload, args.output, bucket, args.gcs_object)
         return
 
-    predictions = encode_and_predict(con, model)
+    predictions, lower, upper = encode_and_predict(con, model, quantile_models)
 
     meta_relation = con.sql("SELECT * FROM live_features ORDER BY trip_id, stop_sequence")
     meta_cols = meta_relation.columns
     meta_rows = [dict(zip(meta_cols, row)) for row in meta_relation.fetchall()]
 
-    payload = summarize(meta_rows, predictions, now, args.model_root / "lgbm_model.txt")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    interval_quantiles = sorted(quantile_models) if len(quantile_models) >= 2 else None
+    payload = summarize(
+        meta_rows, predictions, now, args.model_root / "lgbm_model.txt",
+        lower=lower, upper=upper, interval_quantiles=interval_quantiles,
+    )
+    write_output(payload, args.output, bucket, args.gcs_object)
 
-    log_path = write_predictions_log(con, predictions, args.log_root, now)
+    log_path = write_predictions_log(con, predictions, args.log_root, now, lower=lower, upper=upper)
     con.close()
 
     mean_pred = float(np.mean(predictions))
@@ -781,6 +842,12 @@ def parse_args():
     parser.add_argument("--weather-api-url", default=DEFAULT_API_URL)
     parser.add_argument("--interval-seconds", type=int,
                         help="Run continuously, scoring every N seconds. Defaults to a single cycle.")
+    parser.add_argument("--gcs-bucket", default=os.getenv("GCS_LIVE_BUCKET"),
+                        help="Public GCS bucket to upload live-predictions.json to so a static "
+                             "dashboard can fetch it. Defaults to the GCS_LIVE_BUCKET env var; "
+                             "no upload when unset.")
+    parser.add_argument("--gcs-object", default="live/live-predictions.json",
+                        help="Object name for the uploaded live JSON within --gcs-bucket.")
     return parser.parse_args()
 
 
@@ -798,17 +865,30 @@ def main():
         raise SystemExit(f"Model not found: {model_path}. Train one with analysis/train_model.py first.")
     model = lgb.Booster(model_file=str(model_path))
 
+    quantile_models = load_quantile_models(args.model_root)
+    if len(quantile_models) >= 2:
+        labels = ", ".join(f"q{q:g}" for q in sorted(quantile_models))
+        print(f"Loaded quantile models for prediction intervals: {labels}")
+    else:
+        quantile_models = {}
+        print("No quantile models found; predictions will not include intervals. "
+              "Retrain with analysis/train_model.py to generate them.")
+
     session = make_session()
 
+    bucket = make_gcs_bucket(args.gcs_bucket) if args.gcs_bucket else None
+    if bucket is not None:
+        print(f"Uploading live predictions to: gs://{bucket.name}/{args.gcs_object}")
+
     if not args.interval_seconds:
-        run_cycle(args, session, model)
+        run_cycle(args, session, model, quantile_models, bucket)
         return
 
     print(f"Scoring every {args.interval_seconds}s. Ctrl-C to stop.")
     while True:
         started = time.monotonic()
         try:
-            run_cycle(args, session, model)
+            run_cycle(args, session, model, quantile_models, bucket)
         except KeyboardInterrupt:
             raise
         except Exception as error:
