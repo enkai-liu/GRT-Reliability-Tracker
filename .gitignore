@@ -41,3 +41,6 @@ dashboard/data/**
 # Local Claude Code tooling
 .claude/
 CLAUDE.local.md
+
+# Local working notes (not part of the product)
+HANDOFF.md
