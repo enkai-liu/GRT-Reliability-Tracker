@@ -1,5 +1,7 @@
 # GRT Reliability Tracker
 
+**Live demo → [The Reliability Atlas](https://enkai-liu.github.io/GRT-Reliability-Tracker/)** — interactive network map, reliability-aware trip planner, and an editorial field report, built from ~2.3M arrival observations and a LightGBM live-delay model. The hosted site uses a committed data snapshot (June 12, 2026).
+
 Collector and parsing tools for Grand River Transit GTFS-Realtime and static GTFS data, including vehicle positions, trip updates, service alerts, and static schedules.
 
 By default, trip updates and vehicle positions are collected every 30 seconds. Service alerts are collected every 5 minutes.
