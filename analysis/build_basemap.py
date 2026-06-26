@@ -103,6 +103,53 @@ def round_line(points):
     return [[round(lat, COORD_DECIMALS), round(lon, COORD_DECIMALS)] for lat, lon in points]
 
 
+def stitch_rings(ways, tol=1e-6):
+    """Assemble OSM multipolygon member ways into rings.
+
+    A single outer ring is frequently split across several member ways that
+    share end nodes. Appending each way on its own leaves open chains, which
+    the dashboard fills by joining the loose ends with a straight chord — a
+    long member gap then slashes a wedge across the map. This greedily joins
+    ways by matching endpoints (reversing where needed) until each ring closes
+    or no further match is found. ``tol`` is in degrees; only genuinely shared
+    nodes (distance ~0) match, so distinct features never merge.
+    """
+    pool = [list(w) for w in ways if len(w) >= 2]
+    used = [False] * len(pool)
+
+    def near(a, b):
+        return abs(a[0] - b[0]) <= tol and abs(a[1] - b[1]) <= tol
+
+    rings = []
+    for i in range(len(pool)):
+        if used[i]:
+            continue
+        ring = list(pool[i])
+        used[i] = True
+        extended = True
+        while extended and not near(ring[0], ring[-1]):
+            extended = False
+            for j in range(len(pool)):
+                if used[j]:
+                    continue
+                w = pool[j]
+                if near(ring[-1], w[0]):
+                    ring.extend(w[1:])
+                elif near(ring[-1], w[-1]):
+                    ring.extend(reversed(w[:-1]))
+                elif near(ring[0], w[-1]):
+                    ring[:0] = w[:-1]
+                elif near(ring[0], w[0]):
+                    ring[:0] = list(reversed(w))[:-1]
+                else:
+                    continue
+                used[j] = True
+                extended = True
+                break
+        rings.append(ring)
+    return rings
+
+
 # --------------------------------------------------------------------------- #
 # Overpass
 # --------------------------------------------------------------------------- #
@@ -166,11 +213,17 @@ out geom;"""
             if len(pts) >= 4 and big_enough(pts):
                 polys.append(simplify(pts))
         elif el["type"] == "relation":
-            for m in el.get("members", []):
-                if m.get("role") == "outer" and m.get("geometry"):
-                    pts = [(g["lat"], g["lon"]) for g in m["geometry"]]
-                    if len(pts) >= 4 and big_enough(pts):
-                        polys.append(simplify(pts))
+            # An outer ring is often split across several member ways; stitch
+            # them back into closed rings before treating each as a polygon,
+            # otherwise the open chains fill as straight chords across the map.
+            outers = [
+                [(g["lat"], g["lon"]) for g in m["geometry"]]
+                for m in el.get("members", [])
+                if m.get("role") == "outer" and m.get("geometry")
+            ]
+            for ring in stitch_rings(outers):
+                if len(ring) >= 4 and big_enough(ring):
+                    polys.append(simplify(ring))
     return [round_line(p) for p in polys]
 
 
