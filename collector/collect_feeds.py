@@ -1,9 +1,10 @@
 import argparse
 import os
+import shutil
 import ssl
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -212,6 +213,52 @@ def collect_realtime(session, gcs_bucket, data_root, feeds, feed_names=None):
             print(f"[{timestamp_name(now, '')}] failed {name}: {exc}")
 
 
+def prune_local_raw(gcs_bucket, data_root, retention_days, now):
+    """Delete local raw date-directories older than retention_days, but only
+    when every file in the directory is confirmed present in GCS. Recent dates
+    are kept so the daily parse job can reuse local copies."""
+    if gcs_bucket is None or not retention_days:
+        return
+
+    raw_root = data_root / "raw"
+    if not raw_root.exists():
+        return
+
+    cutoff = (now - timedelta(days=retention_days)).strftime("%Y-%m-%d")
+
+    for feed_dir in sorted(raw_root.iterdir()):
+        if not feed_dir.is_dir():
+            continue
+        for date_dir in sorted(feed_dir.iterdir()):
+            if not date_dir.is_dir() or date_dir.name >= cutoff:
+                continue
+
+            local_files = {path.name for path in date_dir.iterdir() if path.is_file()}
+            prefix = f"raw/{feed_dir.name}/{date_dir.name}/"
+            try:
+                remote_files = {
+                    blob.name.rsplit("/", 1)[-1]
+                    for blob in gcs_bucket.client.list_blobs(gcs_bucket, prefix=prefix)
+                }
+            except Exception as exc:
+                print(f"[{timestamp_name(now, '')}] prune skipped {date_dir}: GCS listing failed: {exc}")
+                continue
+
+            missing = local_files - remote_files
+            if missing:
+                print(
+                    f"[{timestamp_name(now, '')}] prune kept {date_dir}: "
+                    f"{len(missing)} file(s) not found in GCS"
+                )
+                continue
+
+            shutil.rmtree(date_dir)
+            print(
+                f"[{timestamp_name(now, '')}] pruned {date_dir} "
+                f"({len(local_files)} files, all verified in GCS)"
+            )
+
+
 def collect_static_once_per_day(session, gcs_bucket, data_root, feeds):
     now = utc_now()
 
@@ -279,6 +326,14 @@ def parse_args():
         default=Path(os.getenv("DATA_ROOT", DEFAULT_DATA_ROOT)),
         help="Directory where collected data should be stored.",
     )
+    parser.add_argument(
+        "--raw-retention-days",
+        type=positive_int,
+        default=int(os.getenv("RAW_RETENTION_DAYS", 0)) or None,
+        help="Delete local raw date-directories older than this many days once "
+             "their files are verified in GCS. Disabled when unset; requires "
+             "GCS_BUCKET.",
+    )
     return parser.parse_args()
 
 
@@ -299,9 +354,13 @@ def main():
     alert_feeds = [name for name in feeds if "alert" in name]
     frequent_feeds = [name for name in feeds if feeds[name]["kind"] == "realtime" and name not in alert_feeds]
     last_alert_poll = None
+    last_prune_date = None
 
     while True:
         now = utc_now()
+        if args.raw_retention_days and last_prune_date != date_part(now):
+            prune_local_raw(gcs_bucket, data_root, args.raw_retention_days, now)
+            last_prune_date = date_part(now)
         collect_static_once_per_day(session, gcs_bucket, data_root, feeds)
         collect_realtime(session, gcs_bucket, data_root, feeds, frequent_feeds)
 

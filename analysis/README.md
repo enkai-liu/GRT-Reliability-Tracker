@@ -93,7 +93,9 @@ trained model), scores the newest snapshot, and writes:
 - `dashboard/data/live-predictions.json` — per-route summaries and the worst
   upcoming arrivals, loaded by the dashboard's live panel.
 - `data/live/predictions_log/date=YYYY-MM-DD/run-TIMESTAMP.parquet` — full
-  scored rows for later evaluation against observed delays.
+  scored rows for later evaluation against observed delays. When `GCS_BUCKET`
+  (or `--log-gcs-bucket`) is set, each run file is also mirrored to
+  `gs://<bucket>/live/predictions_log/` so evaluation can run on any machine.
 
 When `lgbm_model_qNN.txt` quantile models are present in `--model-root`, each
 arrival also gets `predicted_delay_lower_seconds` / `predicted_delay_upper_seconds`

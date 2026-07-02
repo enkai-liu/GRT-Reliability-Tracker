@@ -815,7 +815,17 @@ def write_output(payload, output_path, bucket=None, object_name=None):
         blob.upload_from_filename(str(output_path), content_type="application/json")
 
 
-def run_cycle(args, session, model, quantile_models, bucket=None):
+def upload_predictions_log(log_bucket, log_path):
+    """Mirror a per-run predictions-log parquet to the private GCS bucket so
+    evaluation can run anywhere without pulling files off the scorer host."""
+    object_name = f"live/predictions_log/{log_path.parent.name}/{log_path.name}"
+    try:
+        log_bucket.blob(object_name).upload_from_filename(str(log_path))
+    except Exception as exc:
+        print(f"  WARN predictions-log upload failed ({object_name}): {exc}")
+
+
+def run_cycle(args, session, model, quantile_models, bucket=None, log_bucket=None):
     now = utc_now()
     raw_root = args.live_root / "raw"
     weather_root = raw_root / "weather_forecasts"
@@ -896,6 +906,8 @@ def run_cycle(args, session, model, quantile_models, bucket=None):
     write_output(payload, args.output, bucket, args.gcs_object)
 
     log_path = write_predictions_log(con, predictions, args.log_root, now, lower=lower, upper=upper)
+    if log_bucket is not None:
+        upload_predictions_log(log_bucket, log_path)
     con.close()
 
     mean_pred = float(np.mean(predictions))
@@ -934,6 +946,10 @@ def parse_args():
                              "no upload when unset.")
     parser.add_argument("--gcs-object", default="live/live-predictions.json",
                         help="Object name for the uploaded live JSON within --gcs-bucket.")
+    parser.add_argument("--log-gcs-bucket", default=os.getenv("GCS_BUCKET"),
+                        help="Private GCS bucket to mirror per-run predictions-log parquet files "
+                             "to (live/predictions_log/date=*/run-*.parquet). Defaults to the "
+                             "GCS_BUCKET env var; no upload when unset.")
     return parser.parse_args()
 
 
@@ -966,15 +982,19 @@ def main():
     if bucket is not None:
         print(f"Uploading live predictions to: gs://{bucket.name}/{args.gcs_object}")
 
+    log_bucket = make_gcs_bucket(args.log_gcs_bucket) if args.log_gcs_bucket else None
+    if log_bucket is not None:
+        print(f"Mirroring predictions log to: gs://{log_bucket.name}/live/predictions_log/")
+
     if not args.interval_seconds:
-        run_cycle(args, session, model, quantile_models, bucket)
+        run_cycle(args, session, model, quantile_models, bucket, log_bucket)
         return
 
     print(f"Scoring every {args.interval_seconds}s. Ctrl-C to stop.")
     while True:
         started = time.monotonic()
         try:
-            run_cycle(args, session, model, quantile_models, bucket)
+            run_cycle(args, session, model, quantile_models, bucket, log_bucket)
         except KeyboardInterrupt:
             raise
         except Exception as error:

@@ -11,7 +11,9 @@ EnvironmentFile=/opt/grt-reliability-tracker/.env
 # (set in .env) so the statically hosted dashboard can fetch it. Needs the
 # trained model under data/analysis/models_live and parsed static GTFS under
 # data/parsed_static_gtfs (see ops/gcp/README.md).
-ExecStart=/opt/grt-reliability-tracker/collector/.venv/bin/python -u /opt/grt-reliability-tracker/analysis/predict_live.py --interval-seconds 300
+# --window-minutes 60 keeps the DuckDB feature rebuild inside the e2-micro's
+# 1 GB of RAM (the 90-minute default can OOM there).
+ExecStart=/opt/grt-reliability-tracker/collector/.venv/bin/python -u /opt/grt-reliability-tracker/analysis/predict_live.py --interval-seconds 300 --window-minutes 60
 Restart=always
 RestartSec=30
 User=grtcollector
